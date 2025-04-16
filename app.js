@@ -10,7 +10,7 @@ dotEnd.config();
 
 const app = express();
 const port = process.env.PORT || 3800;
-const host = '0.0.0.0';
+// const host = '0.0.0.0';
 
 // Custom routes
 const indexRouter = require('./routes/index');
@@ -72,11 +72,7 @@ mongoose.set('strictQuery', true);
 mongoose.connect(uri)
   .then(() => {
     console.log(`Connected to MongoDB`);
-<<<<<<< HEAD
     app.listen(port, () => {
-=======
-    app.listen(port,host, () => {
->>>>>>> bc49205dbf6d6a4ba4979b5616735256fc6b1584
       console.log(`AriTron CBT application listening on port ${port}. http://localhost:${port}`);
     });
   })

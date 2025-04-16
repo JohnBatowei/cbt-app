@@ -4,11 +4,7 @@
   "private": true,
   "main": "app.js",
   "scripts": {
-<<<<<<< HEAD
     "start": "node ./app",
-=======
-    "start": "node --watch ./app",
->>>>>>> bc49205dbf6d6a4ba4979b5616735256fc6b1584
     "test": "jest --watchAll",
     "dev": "nodemon ./app"
   },
