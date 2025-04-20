@@ -1,6 +1,8 @@
+const generateUniqueProfileCode = require('../helpers/profileCodeGenerator');
 const asyncHandler = require("express-async-handler");
 const classModel = require("../models/class");
 const mongoose = require("mongoose");
+const ExcelJS = require('exceljs');
 const subjectModel = require("../models/subject");
 const deleteUploadImage = require("../helpers/deleteImage");
 const questionModel = require("../models/question");
@@ -8,6 +10,7 @@ const studentModel = require("../models/student");
 const { Result } = require("../models/result");
 const headersModel = require("../models/headers");
 const scratchCardModel = require("../models/scratchCard");
+const adminModel = require("../models/admin");
 
 
 
@@ -21,7 +24,7 @@ module.exports.createClass = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Invalid input data." });
   }
   try {
-    const name2 = name.toLowerCase();
+    const name2 = name
     const profileCodeInitialsUppercase = profileCodeInitials.toUpperCase()
     const findClasss = await classModel.findOne({ name: name2 });
 
@@ -97,7 +100,7 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
         name,
         timer,
         subject: subjects, // Update the subject field
-        profileCodeInitials: profileCodeInitial,
+        profileCodeInitials: profileCodeInitial.toUpperCase(),
       },
       { new: true, runValidators: true } // Return the updated document and apply validators
     );
@@ -116,6 +119,21 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
 });
 //----------------------------End of Class---------------------------------------------------
 
+//------------------------Profile code generator-------------------------------------------
+
+module.exports.generateUniqueProfileCode = asyncHandler(async (req, res) => {
+  try {
+    const { prefix } = req.query;
+    if (!prefix) return res.status(400).json({ message: "Missing prefix" });
+
+    const profileCode = await generateUniqueProfileCode(prefix);
+    console.log("profileCode",profileCode);
+    res.status(200).json({ profileCode });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to generate profile code" });
+  }
+});
 
 
 // ------------------------------Subject---Section-----------------------------------------
@@ -140,30 +158,19 @@ module.exports.createSubject = asyncHandler(async (req, res) => {
 });
 
 module.exports.getSubjects = asyncHandler(async (req, res) => {
-  // Fetch classes and populate the subject field and nested questions field
-  // const classes = await classModel
-  //   .find()
-  //   .sort({ createdAt: -1 })
-  //   .populate({
-  //     path: "subject",
-  //     populate: {
-  //       path: "questions",
-  //     },
-  //   })
-  //   .exec();
 
-  // console.log(classes);
-  // const findSubject = await subjectModel.find().sort({ createdAt: -1 }).lean();
-  // const findCandidates = await studentModel.find().sort({ createdAt: -1 }).lean();
+  const limit = 100;
 
-  const [classes,findSubject,findCandidates] = await Promise.all([
-    classModel.find().sort({ createdAt: -1 }).populate({path: "subject", populate: {  path: "questions", },}).exec(),
+
+  const [classes,findSubject,findCandidates,findCandidatesDocsCount] = await Promise.all([
+    // classModel.find().sort({ createdAt: -1 }).populate({path: "subject", populate: {  path: "questions", },}).exec(),
+    classModel.find().sort({ createdAt: -1 }).populate({path: "subject"}).exec(),
     subjectModel.find().sort({ createdAt: -1 }).lean(),
-    studentModel.find().sort({ createdAt: -1 }).lean()
+    studentModel.find().sort({ createdAt: -1 }).limit(limit).lean(),
+    studentModel.countDocuments()
   ])
-  // console.log(findSubject);
-  // Respond with success message
-  res.status(200).json({ message: findSubject, classes, findCandidates });
+
+  res.status(200).json({ message: findSubject, classes, findCandidates,findCandidatesDocsCount });
 });
 
 module.exports.deleteSubject = asyncHandler(async (req, res) => {
@@ -276,53 +283,46 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
     optionC: question.option_C,
     answer: question.answer,
     image: `${req.protocol}://${req.get("host")}/uploads/${question.image}`,
-  }));
+  })).reverse();
 
-  const questions = [];
-  let subjectName = "";
-  // console.log(questions);
-  for (let i = subjectPlusWithImages.length - 1; i >= 0; i--) {
-    questions.push(subjectPlusWithImages[i]);
-    subjectName = subjectPlusWithImages[i].subjectName;
-  }
+  const subjectName = subjectPlusWithImages[0].subjectName;
 
   // console.log(findSubject);
   // Respond with success message
-  res.status(200).json({ questions, subjectName });
+  res.status(200).json({ questions:subjectPlusWithImages, subjectName });
 });
 
-// module.exports.getAllQuestions = asyncHandler(async (req, res) => {
-//   const findSubjectQuestions = await questionModel.find().lean();
-
-//   const subjectPlusWithImages = findSubjectQuestions.map((question) => ({
-//     subjectName: question.subjectName,
-//     questionId: question._id,
-//     subjectId: question.subjectId,
-//     question: question.question,
-//     optionA: question.option_A,
-//     optionB: question.option_B,
-//     optionC: question.option_C,
-//     answer: question.answer,
-//     image: `${req.protocol}://${req.get("host")}/uploads/${question.image}`,
-//   }));
-
-//   const questions = [];
-
-//   // console.log(questions);
-//   for (let i = subjectPlusWithImages.length - 1; i >= 0; i--) {
-//     questions.push(subjectPlusWithImages[i]);
-//     subjectName = subjectPlusWithImages[i].subjectName;
-//   }
-
-//   // console.log(questions);
-//   // Respond with success message
-//   res.status(200).json({ questions });
-// });
 
 module.exports.getAllQuestions = asyncHandler(async (req, res) => {
-  const questionsFromDB = await questionModel.find().lean();
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 50;
+  const skip = (page - 1) * limit;
 
-  const formattedQuestions = questionsFromDB.map((question) => ({
+  const search = req.query.search || "";
+
+  let query = {};
+  if (search.trim()) {
+    const searchRegex = new RegExp(search, "i"); // case-insensitive
+    query = {
+      $or: [
+        { subjectName: searchRegex },
+        { question: searchRegex },
+        { option_A: searchRegex },
+        { option_B: searchRegex },
+        { option_C: searchRegex },
+        { answer: searchRegex },
+      ],
+    };
+  }
+
+  const total = await questionModel.countDocuments(query);
+
+  const questionsdb = await questionModel.find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const formattedQuestions = questionsdb.map((question) => ({
     subjectName: question.subjectName,
     questionId: question._id,
     subjectId: question.subjectId,
@@ -334,8 +334,12 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
     image: question.image ? `${req.protocol}://${req.get("host")}/uploads/${question.image}` : null,
   }));
 
-  res.status(200).json({ questions: formattedQuestions });
+  res.status(200).json({
+    total,
+    questions: formattedQuestions,
+  });
 });
+
 
 
 module.exports.deleteQuestion = asyncHandler(async (req, res) => {
@@ -516,46 +520,168 @@ module.exports.sendResult = asyncHandler(async (req, res) => {
 
 // ---------------------End Send  results -------------------------------------------------------
 module.exports.sendClassResult = asyncHandler(async (req, res) => {
+  const classId = req.params.classId;
+  const { page = 1, limit = 20, search = '' } = req.query;
+
+  const query = {
+      classId: classId,
+      $or: [
+          { candidateName: { $regex: search, $options: 'i' } },
+          { profileCode: { $regex: search, $options: 'i' } },
+          { 'subjects.subjectName': { $regex: search, $options: 'i' } }
+      ]
+  };
+
   try {
-      // Fetch all results
-      const results = await Result.find({classId: req.params.class})
+      const totalCount = await Result.countDocuments(query);
+      const results = await Result.find(query)
+          .skip((page - 1) * limit)
+          .limit(Number(limit));
 
       res.status(200).json({
-     data: results
+          data: results,
+          totalCount
       });
-
   } catch (error) {
-      console.error('Error fetching results:', error);
-      res.status(500).json({
-          success: false,
-          message: 'Failed to retrieve results'
-      });
+      console.error("Error fetching class results:", error);
+      res.status(500).json({ error: "Failed to retrieve class results" });
   }
 });
 
+
+
+module.exports.exportClassResultExcelDownload = asyncHandler( async (req, res) => {
+    const classId = req.params.id;
+    const { search = '' } = req.query;
+
+    const query = {
+        classId: classId,
+        $or: [
+            { candidateName: { $regex: search, $options: 'i' } },
+            { profileCode: { $regex: search, $options: 'i' } },
+            { 'subjects.subjectName': { $regex: search, $options: 'i' } }
+        ]
+    };
+
+    try {
+        const results = await Result.find(query);
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Class Results');
+
+        // Headers
+        worksheet.columns = [
+            { header: 'S/N', key: 'sn', width: 10 },
+            { header: 'Student Name', key: 'candidateName', width: 30 },
+            { header: 'Profile Code', key: 'profileCode', width: 20 },
+            { header: 'Subjects & Scores', key: 'subjects', width: 50 },
+            { header: 'Total Score', key: 'totalScore', width: 15 }
+        ];
+
+        results.forEach((result, index) => {
+            worksheet.addRow({
+                sn: index + 1,
+                candidateName: result.candidateName.toUpperCase(),
+                profileCode: result.profileCode,
+                subjects: result.subjects.map(sub => `${sub.subjectName.toUpperCase()}: ${parseInt(sub.score)}`).join(', '),
+                totalScore: parseInt(result.totalScore)
+            });
+        });
+
+        res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+            "Content-Disposition",
+            "attachment; filename=class_results.xlsx"
+        );
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error("Error exporting class results to Excel:", error);
+        res.status(500).json({ error: "Failed to export results to Excel" });
+    }
+});
 
 
 module.exports.sendClassRegisteredCans = asyncHandler(async (req, res) => {
   try {
+    const { classId } = req.params;
+    const { page = 1, limit = 20, search = "" } = req.query;
 
-    if(!mongoose.Types.ObjectId.isValid(req.params.classId)){
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
       return res.status(404).json({ data: 'Invalid ID' });
     }
-      // Fetch all results
-      const results = await studentModel.find({classId: req.params.classId}).populate('subject')
 
-      res.status(200).json({
-     data: results
-      });
+    const query = {
+      classId,
+      $or: [
+        { candidateName: { $regex: search, $options: 'i' } },
+        { profileCode: { $regex: search, $options: 'i' } }
+      ]
+    };
+
+    const total = await studentModel.countDocuments(query);
+
+    const results = await studentModel.find(query)
+      .populate('subject')
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    res.status(200).json({
+      data: results,
+      total
+    });
 
   } catch (error) {
-      console.error('Error fetching results:', error);
-      res.status(500).json({
-          success: false,
-          message: 'Failed to retrieve results'
-      });
+    console.error('Error fetching results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve results'
+    });
   }
 });
+
+module.exports.downloadClassExcel = asyncHandler(async (req, res) => {
+  try {
+ const classId = req.params.id;
+// console.log('downloaded');
+  const students = await studentModel.find({ classId }).populate('subject');
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Class Candidates');
+
+  worksheet.columns = [
+    { header: 'S/N', key: 'sn', width: 10 },
+    { header: 'Name', key: 'candidateName', width: 30 },
+    { header: 'Profile Code', key: 'profileCode', width: 20 },
+    { header: 'Subjects', key: 'subjects', width: 40 },
+  ];
+
+  students.forEach((student, index) => {
+    worksheet.addRow({
+      sn: index + 1,
+      candidateName: student.candidateName.toUpperCase(),
+      profileCode: student.profileCode,
+      subjects: (student.subject.map(sub => sub.name).join(', ')).toUpperCase()
+    });
+  });
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader('Content-Disposition', 'attachment; filename=ClassCandidates.xlsx');
+
+  await workbook.xlsx.write(res);
+  res.end();
+  } catch (error) {
+    res.status(500).json({ message: 'Could not generate excel', error });
+  }
+});
+
 
 
 // --------------------Headers ------------------------------------------------------------------
@@ -675,3 +801,65 @@ module.exports.getScratchCard = asyncHandler(async (req, res) => {
     res.status(500).json({ data: "Server error" });
   }
 });
+
+module.exports.changePassword = asyncHandler(async (req, res) => {
+  const { email, newPassword } = req.body;
+ 
+  if(!newPassword || newPassword < 6){
+    return res.status(404).json({error: 'Password cannot be empty'})
+  }
+  if(!email){
+    return res.status(404).json({error: 'Invalid email'})
+  }
+  // Optional: verify email if needed
+  const admin = await adminModel.findOne({email: email});
+
+  if (admin) {
+    admin.password = newPassword;
+    await admin.save();
+    return res.status(200).json({ message: 'Congratulations, password changed successfully' });
+  } else {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+    // const updateUser = await adminModel.findOneAndUpdate(req.admin, {password:hashedPassword },{new:true})
+    // if(updateUser){
+    //   return res.status(200).json({ message: 'Congratulations, password changed successfully' });      
+    // }
+    //   return res.status(404).json({ message: 'Admin not found' });
+});
+
+
+module.exports.changeProfileImage = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Invalid file input' });
+  }
+
+  const admin = await adminModel.findById(req.admin);
+  if (!admin) {
+    return res.status(404).json({ message: 'Admin not found' });
+  }
+
+  deleteUploadImage(admin.image)
+  admin.image = req.file.filename; 
+  const savedDocs = await admin.save();
+  const image = `${req.protocol}://${req.get('host')}/uploads/${savedDocs.image}`;
+
+  res.status(200).json({ message: 'Profile image updated successfully', newImage : image});
+});
+
+module.exports.changeProfileName= asyncHandler(async (req, res) => {
+  if (!req.body.name) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
+
+  const admin = await adminModel.findById(req.admin);
+  if (!admin) {
+    return res.status(404).json({ message: 'Admin not found' });
+  }
+
+  admin.name = req.body.name; 
+  const savedDocs = await admin.save();
+
+  res.status(200).json({ message: 'Profile name updated successfully', newName : savedDocs.name});
+});
+

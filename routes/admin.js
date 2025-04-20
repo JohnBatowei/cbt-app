@@ -18,7 +18,15 @@ const {
   sendClassResult,
   changeHeaders,
   allHeaders,
-  sendClassRegisteredCans,scratchCard,getScratchCard
+  sendClassRegisteredCans,
+  scratchCard,
+  getScratchCard,
+  changePassword,
+  changeProfileImage,
+  changeProfileName,
+  downloadClassExcel,
+  generateUniqueProfileCode,
+  exportClassResultExcelDownload,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -26,6 +34,9 @@ const upload = require("./files");
 const { handleExcelFileQuestion, handleExcelFileCandidates } = require("../controllers/handleExcelFileController");
 
 router.use(requireAuth);
+
+//-------------generate profile code--------------------------------
+router.get("/generate-profile-code", generateUniqueProfileCode);
 
 //--------------Create-----Class---------------------------------------
 router.post("/create-class", createClass);
@@ -48,23 +59,27 @@ router.patch("/update-question", upload.single("file"), patchQuestion);
 router.post("/register-student", upload.single("file"), registerStudent);
 router.delete("/delete-student/:id", deleteStudent);
 
-
-
 //-----------upload-----excel---file--- for----cand
-router.post('/upload-x-question', handleExcelFileQuestion);
-router.post('/upload-x-candidate', handleExcelFileCandidates);
-
+router.post("/upload-x-question", handleExcelFileQuestion);
+router.post("/upload-x-candidate", handleExcelFileCandidates);
 
 // -----------get all result----------------------
-router.get('/get-results',sendResult)
-router.get('/class-results/:class',sendClassResult)
-router.get('/class-registered-students/:classId',sendClassRegisteredCans)
+router.get("/get-results", sendResult);
+router.get("/class-results/:classId", sendClassResult);
+router.get("/class-results/export-excel/:id", exportClassResultExcelDownload);
+router.get("/class-registered-students/:classId", sendClassRegisteredCans);
+router.get("/class-registered-students/download-excel/:id", downloadClassExcel);
 
 //-------------------change-----headers------------------------
-router.post('/change-headers/:id',changeHeaders);
-router.get('/all-headers', allHeaders);
+router.post("/change-headers/:id", changeHeaders);
+router.get("/all-headers", allHeaders);
 
-router.post('/create-scratch-card', scratchCard);
-router.get('/get-scratch-card', getScratchCard);
+router.post("/create-scratch-card", scratchCard);
+router.get("/get-scratch-card", getScratchCard);
+
+//---------------/change-password----------------
+router.put("/change-password", changePassword);
+router.put("/update-profile-image", upload.single("image"), changeProfileImage);
+router.put("/name-change", changeProfileName);
 
 module.exports = router;

@@ -30,12 +30,13 @@ router.get("/", (req, res) => {
 // create an admin route
 router.post("/",upload.single("file"), async (req, res) => {
   try {
-    // console.log(req.body);
-    const findAdmin = await adminModel.findOne({ email: req.body.email });
+    // console.log(req.file.path);
+    const tEmail = req.body.email.toLowerCase()
+    const findAdmin = await adminModel.findOne({ email: tEmail });
     if (!findAdmin) { 
       let form = new adminModel({  
         name: req.body.name,
-        email: req.body.email,
+        email: tEmail,
         password: req.body.password,
         image: req.file.filename
       });
@@ -63,7 +64,12 @@ router.post("/verify", async (req, res, next) => {
   try {
     const {email,password} = req.body
     // return console.log(req.body)
-    const admin = await adminModel.login(email,password)
+    const tEmail = email.toLowerCase()
+    const admin = await adminModel.login(tEmail,password)
+
+    if(admin.error){
+      return res.status(404).json({message : admin.error})
+    }
     // let token = createToken(admin._id)
     const token = jwt.sign({ id: admin._id }, process.env.SECRET, { expiresIn: '3d' });
     const image = `${req.protocol}://${req.get('host')}/uploads/${admin.image}`;
@@ -78,7 +84,7 @@ router.post("/verify", async (req, res, next) => {
 
     // console.log('Cookie sent:', res.get('Set-Cookie'));
       // console.log('cookie :', req.cookies)
-    res.status(200).json({name: admin.name,email , image});
+    res.status(200).json({name: admin.name,email , image });
   
   } catch (error) {
     console.log(error);
@@ -268,7 +274,7 @@ router.post('/st-check-result', async (req, res) => {
       // If the scratch card is different, check its validity
       if (result.scratchCard !== scratchCard) {
         if (!sCard) {
-          return res.status(400).json({ error: 'This scratch card has been used' });
+          return res.status(400).json({ error: 'This scratch card is either used or wrong' });
         }
         // Assign the new valid scratch card
         result.count = 1;
@@ -279,7 +285,7 @@ router.post('/st-check-result', async (req, res) => {
 
       // Enforce maximum usage of scratch card (3 times)
       if (result.count >= 3) {
-        return res.status(400).json({ error: 'Scratch card limit of 3 times triers has been reached' });
+        return res.status(400).json({ error: 'Scratch card limit of 3 time triers has been reached' });
       }
 
       // Increment the usage count

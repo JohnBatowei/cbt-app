@@ -21,12 +21,14 @@ const requireAuth = async (req,res,next)=>{
     const token = req.cookies.adminCookie;
     // console.log('admin verify',token)
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' });
+        return res.status(401).json({ error: 'Not authenticated' });
     }
-
+    
     try {
-        const {_id} = jwt.verify(token, process.env.SECRET)
-        req.admin = await adminModel.findOne({_id}).select('_id')
+        const {id} = jwt.verify(token, process.env.SECRET)
+        // console.log(id);
+        req.admin = await adminModel.findOne({_id:id}).select('_id')
+        // console.log(req.admin);
         next()
     } catch (error) {
         console.log(error)

@@ -1,9 +1,5 @@
 /*! js-cookie v3.0.5 | MIT */
 
-/*! sheetjs (C) 2013-present SheetJS -- http://sheetjs.com */
-
-/*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
-
 /**
  * @license Complex.js v2.1.1 12/05/2020
  *

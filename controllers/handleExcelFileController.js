@@ -13,18 +13,28 @@ const upload = multer({ storage: storage }).single('file'); // Setting up multer
 
 //---------------------------------------------------------------------
 
-// Generate a random profile code
-function generateProfileCode(length) {
-  const chars = '0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * chars.length);
-    result += chars[randomIndex];
-  }
-  return result;
-}
-
 const year = new Date().getFullYear();
+
+let profileCounter = 0;
+
+// Generate the next sequential profile code
+async function generateSequentialProfileCode() {
+  if (profileCounter === 0) {
+    const latestStudent = await studentModel.findOne({ profileCode: new RegExp(`^BAT${year}`) })
+      .sort({ profileCode: -1 });
+
+    if (latestStudent) {
+      const currentNumber = parseInt(latestStudent.profileCode.slice(7), 10);
+      profileCounter = currentNumber + 1;
+    } else {
+      profileCounter = 1;
+    }
+  }
+
+  const formatted = String(profileCounter).padStart(4, '0');
+  profileCounter++;
+  return `BAT${year}${formatted}`;
+}
 
 module.exports.handleExcelFileCandidates = [
   upload,
@@ -42,14 +52,14 @@ module.exports.handleExcelFileCandidates = [
     for (let rowIndex = 3; rowIndex <= worksheet.rowCount; rowIndex++) {
       const row = worksheet.getRow(rowIndex);
 
-      const className = row.getCell(1).value?.toString().toLowerCase().trim() || '';
+      const className = row.getCell(1).value?.toString().trim() || '';
       const candidateName = row.getCell(2).value?.toString().trim() || '';
       const phoneNo = row.getCell(3).value?.toString().trim() || '';
       const subjectsRaw = [
-        row.getCell(4).value?.toString().toLowerCase().trim() || '',
-        row.getCell(5).value?.toString().toLowerCase().trim() || '',
-        row.getCell(6).value?.toString().toLowerCase().trim() || '',
-        row.getCell(7).value?.toString().toLowerCase().trim() || '',
+        row.getCell(4).value?.toString().trim() || '',
+        row.getCell(5).value?.toString().trim() || '',
+        row.getCell(6).value?.toString().trim() || '',
+        row.getCell(7).value?.toString().trim() || '',
       ];
 
       if (!className || !candidateName) {
@@ -85,13 +95,20 @@ module.exports.handleExcelFileCandidates = [
         }
       }
 
+      let profileCode;
+      let duplicate;
+      do {
+        profileCode = await generateSequentialProfileCode();
+        duplicate = await studentModel.findOne({ profileCode });
+      } while (duplicate);
+
       const student = {
         classId: classData._id,
         className: classData.name,
         timer: classData.timer,
         candidateName: candidateName,
         image: '',
-        profileCode: `BAT${year}${generateProfileCode(4)}`,
+        profileCode,
         subject: subjectIds,
         phone: phoneNo,
       };
@@ -105,13 +122,14 @@ module.exports.handleExcelFileCandidates = [
 
     if (candidatesNotAdded.length > 0) {
       return res.status(400).json({
-        message: `Class not found. The following candidates were not added: ${candidatesNotAdded.join(', ')}`
+        message: `Class not found. The following candidates were not added: ${candidatesNotAdded.join(', ')}`,
       });
     }
 
     return res.status(200).json({ message: 'Candidates uploaded successfully' });
   })
 ];
+
 
 
 module.exports.handleExcelFileQuestion = [
@@ -129,7 +147,7 @@ module.exports.handleExcelFileQuestion = [
       const row = worksheet.getRow(rowIndex);
 
       const subjectName = row.getCell(1).value
-        ? row.getCell(1).value.toString().toLowerCase()
+        ? row.getCell(1).value.toString()
         : null;
       const questionText = row.getCell(2).value || "";
       const optionA = row.getCell(3).value || "";

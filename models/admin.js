@@ -22,7 +22,7 @@ const adminSchema = new mongoose.Schema(
     //   minlength: [6,'your password should be more than 6 characters']
     },
     image:{
-      type: String,
+      type: String, default: null,
     }
   },
   { timestamps: true }
@@ -37,17 +37,22 @@ adminSchema.post('save',function(doc,next){
 
 // fire a function before a user has been  saved
 adminSchema.pre('save',async function(next){
-  console.log('admin is about to be saved', this)
-  const salt = await bcrypt.genSalt(10)
-  this.password = await bcrypt.hash(this.password,salt)
+  // console.log('admin is about to be saved', this)
+  if(this.isModified('password') && this.password && this.password.trim() !== ''){
+    const salt = await bcrypt.genSalt(10)
+    this.password = await bcrypt.hash(this.password,salt)
+  }
   next()
 })
 
 // lets verify the isAdmin with the static mathod
 adminSchema.statics.login = async function(email, password){
+
   const admin = await this.findOne({email})
+  // console.log(email, admin.email);
   if(!admin){
-    throw Error('incorrect Email')
+    // throw Error('incorrect Email')
+    return {error: 'incorrect Email'}
   }
   else{
     const auth = await bcrypt.compare(password, admin.password)
@@ -70,7 +75,7 @@ adminSchema.statics.login = async function(email, password){
       return admin
       // return ({admin})
     }else{
-      throw Error('incorrect Password')
+      return {error:'incorrect Password'}
     }
   }
 }
