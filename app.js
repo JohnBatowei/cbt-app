@@ -32,6 +32,7 @@ app.use((req, res, next) => {
   console.log(req.path, req.method);
   next();
 });
+app.set('trust proxy', true);
 
 // Body parsers
 app.use(bodyParser.json());
@@ -43,6 +44,7 @@ app.use(cookieParser());
 // Static files and logging
 app.use(morgan("tiny"));
 app.use(express.static(path.join(__dirname, "public")));
+// app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use(express.static("frontend/dist"));
 
 

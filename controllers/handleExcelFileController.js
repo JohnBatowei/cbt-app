@@ -20,7 +20,7 @@ let profileCounter = 0;
 // Generate the next sequential profile code
 async function generateSequentialProfileCode() {
   if (profileCounter === 0) {
-    const latestStudent = await studentModel.findOne({ profileCode: new RegExp(`^BAT${year}`) })
+    const latestStudent = await studentModel.findOne({ profileCode: new RegExp(`^ATN${year}`) })
       .sort({ profileCode: -1 });
 
     if (latestStudent) {
