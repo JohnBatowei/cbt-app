@@ -3,6 +3,7 @@ const asyncHandler = require("express-async-handler");
 const classModel = require("../models/class");
 const mongoose = require("mongoose");
 const ExcelJS = require('exceljs');
+const sanitizeHtml = require('sanitize-html');
 const subjectModel = require("../models/subject");
 const deleteUploadImage = require("../helpers/deleteImage");
 const questionModel = require("../models/question");
@@ -228,6 +229,8 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Unable to find subject" });
   }
 
+    // Sanitize the question field before saving
+    question = sanitizeHtml(question);
   // Prepare question object
   const questionData = {
     subjectName: findSubject.name,
@@ -370,7 +373,9 @@ module.exports.patchQuestion = asyncHandler(async (req, res) => {
     return res.status(500).json({ message: "Unable to find document" });
   }
 
-  questionD.question = question;
+  let questions = sanitizeHtml(question);
+  
+  questionD.question = questions;
   questionD.option_A = optionA;
   questionD.option_B = optionB;
   questionD.option_C = optionC;
