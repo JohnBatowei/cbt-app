@@ -159,20 +159,34 @@ module.exports.createSubject = asyncHandler(async (req, res) => {
 });
 
 module.exports.getSubjects = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, searchTerm = "" } = req.query;
 
-  const limit = 100;
+  let query = {};
 
+  if (searchTerm.trim() !== "") {
+    query = {
+      $or: [
+        { candidateName: { $regex: searchTerm, $options: "i" } },
+        { className: { $regex: searchTerm, $options: "i" } },
+        { timer: { $regex: searchTerm, $options: "i" } },
+        { profileCode: { $regex: searchTerm, $options: "i" } }
+      ]
+    };
+  }
 
-  const [classes,findSubject,findCandidates,findCandidatesDocsCount] = await Promise.all([
-    // classModel.find().sort({ createdAt: -1 }).populate({path: "subject", populate: {  path: "questions", },}).exec(),
-    classModel.find().sort({ createdAt: -1 }).populate({path: "subject"}).exec(),
+  const skip = (page - 1) * limit;
+
+  const [classes, findSubject, findCandidates, findCandidatesDocsCount] = await Promise.all([
+    classModel.find().sort({ createdAt: -1 }).populate({ path: "subject" }).exec(),
     subjectModel.find().sort({ createdAt: -1 }).lean(),
-    studentModel.find().sort({ createdAt: -1 }).limit(limit).lean(),
-    studentModel.countDocuments()
-  ])
+    studentModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    studentModel.countDocuments(query)
+  ]);
 
-  res.status(200).json({ message: findSubject, classes, findCandidates,findCandidatesDocsCount });
+  res.status(200).json({ message: findSubject, classes, findCandidates, findCandidatesDocsCount });
 });
+
+
 
 module.exports.deleteSubject = asyncHandler(async (req, res) => {
   const subjectId = req.params.del;
