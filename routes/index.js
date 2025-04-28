@@ -72,7 +72,8 @@ router.post("/verify", async (req, res, next) => {
     }
     // let token = createToken(admin._id)
     const token = jwt.sign({ id: admin._id }, process.env.SECRET, { expiresIn: '3d' });
-    const image = `${req.protocol}://${req.get('host')}/uploads/${admin.image}`;
+    // const image = `${req.protocol}://${req.get('host')}/uploads/${admin.image}`;
+    const image = `/uploads/${admin.image}`;
 
     res.cookie('adminCookie', token, {
       httpOnly: true,
@@ -155,7 +156,8 @@ router.post('/verify-login', async (req, res) => {
         option_C: question.option_C,
         answer: question.answer,
         selectedOption: "",
-        image: question.image ? `${req.protocol}://${req.get('host')}/uploads/${question.image}` : null
+        image: question.image ? `/uploads/${question.image}` : null
+        // image: question.image ? `${req.protocol}://${req.get('host')}/uploads/${question.image}` : null
       }));
 
       return {
@@ -165,7 +167,8 @@ router.post('/verify-login', async (req, res) => {
       };
     });
 
-    const image = candidate.image ? `${req.protocol}://${req.get('host')}/uploads/${candidate.image}` : '';
+    const image = candidate.image ? `/uploads/${candidate.image}` : '';
+    // const image = candidate.image ? `${req.protocol}://${req.get('host')}/uploads/${candidate.image}` : '';
 
     res.cookie('studentExamCookie', token, {
       httpOnly: true,

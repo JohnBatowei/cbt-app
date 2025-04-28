@@ -269,6 +269,7 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
   }
 });
 
+
 module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
   const subjectId = req.params.subjectId;
   // console.log("got it");
@@ -285,7 +286,8 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
     optionB: question.option_B,
     optionC: question.option_C,
     answer: question.answer,
-    image: `${req.protocol}://${req.get("host")}/uploads/${question.image}`,
+    image: `/uploads/${question.image}`,
+    // image: `${req.protocol}://${req.get("host")}/uploads/${question.image}`,
   })).reverse();
 
   const subjectName = subjectPlusWithImages[0].subjectName;
@@ -334,7 +336,8 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
     optionB: question.option_B,
     optionC: question.option_C,
     answer: question.answer,
-    image: question.image ? `${req.protocol}://${req.get("host")}/uploads/${question.image}` : null,
+    image: question.image ? `/uploads/${question.image}` : null,
+    // image: question.image ? `${req.protocol}://${req.get("host")}/uploads/${question.image}` : null,
   }));
 
   res.status(200).json({
@@ -520,7 +523,6 @@ module.exports.sendResult = asyncHandler(async (req, res) => {
       });
   }
 });
-
 
 
 // ---------------------End Send  results -------------------------------------------------------
@@ -730,7 +732,6 @@ module.exports.changeHeaders = asyncHandler(async (req, res) => {
 });
 
 
-
 module.exports.allHeaders = asyncHandler(async (req, res) => {
   try {
     const allHeaders = await headersModel.find({}).lean();
@@ -847,7 +848,8 @@ module.exports.changeProfileImage = asyncHandler(async (req, res) => {
   deleteUploadImage(admin.image)
   admin.image = req.file.filename; 
   const savedDocs = await admin.save();
-  const image = `${req.protocol}://${req.get('host')}/uploads/${savedDocs.image}`;
+  const image = `/uploads/${savedDocs.image}`;
+  // const image = `${req.protocol}://${req.get('host')}/uploads/${savedDocs.image}`;
 
   res.status(200).json({ message: 'Profile image updated successfully', newImage : image});
 });

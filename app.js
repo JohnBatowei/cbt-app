@@ -19,12 +19,11 @@ const studentRouter = require('./routes/studentApi');
 
 
 // CORS Configuration
-app.use(cors({
-  origin: process.env.CLIENT_URL || "*",
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+const optionsCors = {
+  origin: "*",
   credentials: true
-}));
+};
+app.use(cors(optionsCors));
 
 
 // Middleware for logging
