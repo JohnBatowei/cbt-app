@@ -1,11 +1,12 @@
-const studentModel = require("../models/student");
+const profileCodeModel = require("../models/profileCode");
+// const studentModel = require("../models/student");
 
 async function generateUniqueProfileCode(prefix) {
   const year = new Date().getFullYear();
   const base = `${prefix}${year}`;
 
   // Find the latest profileCode starting with the base prefix + year
-  const lastStudent = await studentModel.findOne({ profileCode: { $regex: `^${base}` } })
+  const lastStudent = await profileCodeModel.findOne({ profileCode: { $regex: `^${base}` } })
     .sort({ profileCode: -1 }) // Get the highest one
     .lean();
 

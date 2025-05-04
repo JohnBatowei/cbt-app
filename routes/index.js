@@ -322,4 +322,26 @@ router.post('/st-check-result', async (req, res) => {
 });
 
 
+router.post("/student-logout",(req, res) => {
+  console.log('got cookies');
+  res.clearCookie('studentExamCookie', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+    path: '/',
+  });
+  res.status(200).json({ message: "Candidate logged out successfully" });
+});
+
+
+router.post( "/admin-logout", (req, res) => {
+  res.clearCookie('adminCookie', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+    path: '/',
+  });
+  res.status(200).json({ message: "Admin logged out successfully" });
+});
+
 module.exports = router;

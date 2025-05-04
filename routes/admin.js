@@ -27,6 +27,8 @@ const {
   downloadClassExcel,
   generateUniqueProfileCode,
   exportClassResultExcelDownload,
+  deleteRegisteredStudents,
+  deleteClassResults,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -81,5 +83,10 @@ router.get("/get-scratch-card", getScratchCard);
 router.put("/change-password", changePassword);
 router.put("/update-profile-image", upload.single("image"), changeProfileImage);
 router.put("/name-change", changeProfileName);
+
+
+//--------------------Candidates-----and result--------------
+router.delete("/delete-registered-students/:classId", deleteRegisteredStudents)
+router.delete("/delete-class-results/:classId", deleteClassResults)
 
 module.exports = router;

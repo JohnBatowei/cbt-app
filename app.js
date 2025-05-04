@@ -55,6 +55,7 @@ app.use("/api/api/index", indexRouter);
 app.use("/api/st", studentRouter);
 app.use("/api", adminRouter);
 
+
 // Test API Endpoint
 app.post("/api-test", async (req, res) => {
   console.log(req.body);

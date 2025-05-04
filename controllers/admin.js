@@ -12,7 +12,7 @@ const { Result } = require("../models/result");
 const headersModel = require("../models/headers");
 const scratchCardModel = require("../models/scratchCard");
 const adminModel = require("../models/admin");
-
+const profileCodeModel = require('../models/profileCode');
 
 
 //--------------------create--a--class-------------------------------------------------------
@@ -314,7 +314,7 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
 
 module.exports.getAllQuestions = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 50;
+  const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
   const search = req.query.search || "";
@@ -460,8 +460,8 @@ module.exports.registerStudent = asyncHandler(async (req, res) => {
     });
 
     // Save the student to the database
-   const saveCan = await newStudent.save();
-
+    const saveCan = await newStudent.save();
+    new profileCodeModel({profileCode}).save();
     res.status(200).json({ message: `${saveCan.candidateName} has been registered successfully !!!` });
   } catch (error) {
     console.error('Error registering student:', error);
@@ -481,6 +481,7 @@ module.exports.deleteStudent = asyncHandler(async (req, res) => {
   try {
     // Find and delete the student by ID
     const result = await studentModel.findByIdAndDelete(id);
+                   await profileCodeModel.findOneAndDelete({profileCode: result.profileCode});
 
     // Check if student was found and deleted
     if (!result) {
@@ -542,7 +543,7 @@ module.exports.sendResult = asyncHandler(async (req, res) => {
 // ---------------------End Send  results -------------------------------------------------------
 module.exports.sendClassResult = asyncHandler(async (req, res) => {
   const classId = req.params.classId;
-  const { page = 1, limit = 20, search = '' } = req.query;
+  const { page = 1, limit = 10, search = '' } = req.query;
 
   const query = {
       classId: classId,
@@ -630,7 +631,7 @@ module.exports.exportClassResultExcelDownload = asyncHandler( async (req, res) =
 module.exports.sendClassRegisteredCans = asyncHandler(async (req, res) => {
   try {
     const { classId } = req.params;
-    const { page = 1, limit = 20, search = "" } = req.query;
+    const { page = 1, limit = 12, search = "" } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(classId)) {
       return res.status(404).json({ data: 'Invalid ID' });
@@ -884,3 +885,87 @@ module.exports.changeProfileName= asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Profile name updated successfully', newName : savedDocs.name});
 });
 
+
+
+//--------------delete candidates by class and result---------------------
+
+module.exports.deleteRegisteredStudents = asyncHandler(async (req, res) => {
+  const classId = req.params.classId;
+
+  // Validate the classId
+  if (!mongoose.Types.ObjectId.isValid(classId)) {
+    return res.status(400).json({ message: "Invalid class ID" });
+  }
+
+  try {
+    // Find all students with the classId
+    const students = await studentModel.find({ classId });
+
+    if (!students.length) {
+      return res.status(404).json({ message: "No students found for this class" });
+    }
+
+    // Delete all related profile codes and images
+    for (const student of students) {
+      if (student.profileCode) {
+        await profileCodeModel.deleteOne({ profileCode: student.profileCode });
+      }
+
+      if (student.image) {
+        deleteUploadImage(student.image);
+      }
+    }
+
+    // Delete the students from the database
+    await studentModel.deleteMany({ classId });
+
+    res.status(200).json({
+      message: `${students.length} student(s) and their profile codes deleted successfully`,
+    });
+
+  } catch (error) {
+    console.error("Error deleting students:", error);
+    res.status(500).json({ message: "An error occurred while deleting students" });
+  }
+});
+
+
+module.exports.deleteClassResults = asyncHandler(async (req, res) => {
+  const classId = req.params.classId;
+
+  // Validate the classId
+  if (!mongoose.Types.ObjectId.isValid(classId)) {
+    return res.status(400).json({ message: "Invalid class ID" });
+  }
+
+  try {
+    // Find all students with the classId
+    const students = await Result.find({ classId });
+
+    if (!students.length) {
+      return res.status(404).json({ message: "No students found for this class" });
+    }
+
+    // Delete all related profile codes and images
+    for (const student of students) {
+      if (student.profileCode) {
+        await profileCodeModel.deleteOne({ profileCode: student.profileCode });
+      }
+
+      if (student.image) {
+        deleteUploadImage(student.image);
+      }
+    }
+
+    // Delete the students from the database
+    await Result.deleteMany({ classId });
+
+    res.status(200).json({
+      message: `${students.length} student(s) results deleted successfully from ${students[0].className}`,
+    });
+
+  } catch (error) {
+    console.error("Error deleting students:", error);
+    res.status(500).json({ message: "An error occurred while deleting students" });
+  }
+});
