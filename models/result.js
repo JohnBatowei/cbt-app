@@ -1,5 +1,19 @@
 const mongoose = require('mongoose');
 
+const questionBreakdownSchema = new mongoose.Schema({
+    questionId:     { type: mongoose.Schema.Types.ObjectId },
+    questionText:   { type: String },
+    options: {
+      A: String,
+      B: String,
+      C: String,
+      D: String,
+    },
+    selectedOption: { type: String },
+    correctAnswer:  { type: String },
+    isCorrect:      { type: Boolean },
+  }, { _id: false });            // no extra _id for sub‑docs
+  
 const ResultSchema = new mongoose.Schema({
     studentId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -41,7 +55,8 @@ const ResultSchema = new mongoose.Schema({
             score: {
                 type: Number,
                 required: true
-            }
+            },
+            questions:   [questionBreakdownSchema] 
         }
     ],
     count: {type: Number, default: 0},

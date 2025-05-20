@@ -155,72 +155,179 @@ module.exports.updateExamInstance = asyncHandler(async (req, res) => {
   }
 });
 
-
+// controller/studentController.js
 module.exports.markQuestion = asyncHandler(async (req, res) => {
   try {
-    const studentId = req.student; // The authenticated student's ID
+    const studentId = req.student;
     const { classId, className, candidateName, profileCode, subjects } = req.body;
 
     let totalScore = 0;
-    const markedSubjects = subjects.map((subject) => {
-      const totalQuestions = subject.questions.length;
 
-      // If there are no questions in the subject, set score to 0
-      if (totalQuestions === 0) {
+    const markedSubjects = subjects.map(subject => {
+      const totalQuestions = subject.questions.length;
+      if (!totalQuestions) {
         return {
           subjectId: subject.subjectId,
           subjectName: subject.subjectName,
           score: 0,
+          questions: []
         };
       }
 
       let correctAnswers = 0;
-      subject.questions.forEach((question) => {
-        if (question.selectedOption === question.correctAnswer) {
-          correctAnswers += 1;
+
+      const answeredQuestions = subject.questions.map(q => {
+        // keys already lowercase in your data; normalise just in case
+        const selKey  = (q.selectedOption || '').toLowerCase(); // '' when skipped
+        const corrKey = (q.correctAnswer  || '').toLowerCase();
+
+        /* ---------- FIX START ---------- */
+        const answered  = !!selKey;                     // Boolean – did the student pick anything?
+        const isCorrect = answered && selKey === corrKey; // Boolean – always true/false
+        /* ----------  FIX END  ---------- */
+
+        if (isCorrect) correctAnswers++;
+
+        // helper to map A/B/C/D to the option text
+        const keyToText = key => {
+          switch (key) {
+            case 'a': return q.option_A;
+            case 'b': return q.option_B;
+            case 'c': return q.option_C;
+            case 'd': return q.option_D;
+            default:  return '';
+          }
+        };
+
+        const doc = {
+          questionId:     q.questionId || q._id,
+          questionText:   q.question,
+          options: {
+            A: q.option_A,
+            B: q.option_B,
+            C: q.option_C,
+            D: q.option_D
+          },
+          selectedOption: selKey,        // '' if skipped
+          correctAnswer:  corrKey,
+          isCorrect                       // <-- now guaranteed Boolean
+        };
+
+        if (!isCorrect) {
+          doc.selectedText = keyToText(selKey);   // '' when skipped
+          doc.correctText  = keyToText(corrKey);
         }
+
+        return doc;
       });
 
-      // Calculate the score for the subject, ensuring it's a valid number
-      const subjectScore = (correctAnswers / totalQuestions) * 100 || 0;
+      const subjectScore = (correctAnswers / totalQuestions) * 100;
       totalScore += subjectScore;
 
       return {
-        subjectId: subject.subjectId,
+        subjectId:   subject.subjectId,
         subjectName: subject.subjectName,
-        score: subjectScore,
+        score:       subjectScore,
+        questions:   answeredQuestions
       };
     });
 
-    // Save the result in batch (use bulk operations)
-    const result = new Result({
+    /* ----------------- save result ----------------- */
+    const result = await Result.create({
       studentId,
       classId,
       className,
       candidateName,
       profileCode,
-      totalScore: totalScore || 0, // Ensure totalScore is a valid number
-      subjects: markedSubjects,
+      totalScore,
+      subjects: markedSubjects
     });
 
-    // Use bulkWrite or create in bulk if handling multiple results
-    const markedResult = await result.save();
-
-    // Handling multiple deletions in parallel using Promise.all
-    const [studentDeleteResult, examInstanceDeleteResult] = await Promise.all([
-      studentModel.findByIdAndDelete({ _id: markedResult.studentId }), // Delete student record
-      ExamInstances.findOneAndDelete({ profileCode }), // Delete exam instance
+    await Promise.all([
+      studentModel.findByIdAndDelete(result.studentId),
+      ExamInstances.findOneAndDelete({ profileCode })
     ]);
 
-    // You can return the results, but note it's improved with the optimized approach
-    res.status(200).json({
-      message: "Results marked successfully",
+    return res.status(200).json({
+      message: 'Results marked successfully',
       totalScore,
       subjects: markedSubjects,
-      markedResult: markedResult._id,
+      markedResult: result._id
     });
   } catch (error) {
-    console.error("Error marking questions:", error);
-    return res.status(500).json({ error: "Server error" });
+    console.error('Error marking questions:', error);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
+
+
+
+
+// module.exports.markQuestion = asyncHandler(async (req, res) => {
+//   try {
+//     const studentId = req.student; // The authenticated student's ID
+//     const { classId, className, candidateName, profileCode, subjects } = req.body;
+
+//     let totalScore = 0;
+//     const markedSubjects = subjects.map((subject) => {
+//       const totalQuestions = subject.questions.length;
+
+//       // If there are no questions in the subject, set score to 0
+//       if (totalQuestions === 0) {
+//         return {
+//           subjectId: subject.subjectId,
+//           subjectName: subject.subjectName,
+//           score: 0,
+//         };
+//       }
+
+//       let correctAnswers = 0;
+//       subject.questions.forEach((question) => {
+//         if (question.selectedOption === question.correctAnswer) {
+//           correctAnswers += 1;
+//         }
+//       });
+
+//       // Calculate the score for the subject, ensuring it's a valid number
+//       const subjectScore = (correctAnswers / totalQuestions) * 100 || 0;
+//       totalScore += subjectScore;
+
+//       return {
+//         subjectId: subject.subjectId,
+//         subjectName: subject.subjectName,
+//         score: subjectScore,
+//       };
+//     });
+
+//     // Save the result in batch (use bulk operations)
+//     const result = new Result({
+//       studentId,
+//       classId,
+//       className,
+//       candidateName,
+//       profileCode,
+//       totalScore: totalScore || 0, // Ensure totalScore is a valid number
+//       subjects: markedSubjects,
+//     });
+
+//     // Use bulkWrite or create in bulk if handling multiple results
+//     const markedResult = await result.save();
+
+//     // Handling multiple deletions in parallel using Promise.all
+//     const [studentDeleteResult, examInstanceDeleteResult] = await Promise.all([
+//       studentModel.findByIdAndDelete({ _id: markedResult.studentId }), // Delete student record
+//       ExamInstances.findOneAndDelete({ profileCode }), // Delete exam instance
+//     ]);
+
+//     // You can return the results, but note it's improved with the optimized approach
+//     res.status(200).json({
+//       message: "Results marked successfully",
+//       totalScore,
+//       subjects: markedSubjects,
+//       markedResult: markedResult._id,
+//     });
+//   } catch (error) {
+//     console.error("Error marking questions:", error);
+//     return res.status(500).json({ error: "Server error" });
+//   }
+// });

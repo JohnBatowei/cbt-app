@@ -38,7 +38,7 @@ router.post("/",upload.single("file"), async (req, res) => {
         name: req.body.name,
         email: tEmail,
         password: req.body.password,
-        image: req.file.filename
+        image: req.file.filenamez
       });
       form.save().then(data => {
 
