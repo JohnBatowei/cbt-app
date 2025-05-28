@@ -29,6 +29,8 @@ const {
   exportClassResultExcelDownload,
   deleteRegisteredStudents,
   deleteClassResults,
+  updateClassBatch,
+  changeBatchAwaitTime,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -44,6 +46,11 @@ router.get("/generate-profile-code", generateUniqueProfileCode);
 router.post("/create-class", createClass);
 router.delete("/delete-class/:id", deleteClass);
 router.patch("/update-class/:id", updateClass);
+
+//----------------------create-batched-class---------------------------------
+router.post("/create-batched-class", createClass);
+router.patch("/update-class/:id/batch", updateClassBatch);
+
 
 // ---------------------Subject--------------------------------------------
 router.post("/create-subject", createSubject);
@@ -83,6 +90,7 @@ router.get("/get-scratch-card", getScratchCard);
 router.put("/change-password", changePassword);
 router.put("/update-profile-image", upload.single("image"), changeProfileImage);
 router.put("/name-change", changeProfileName);
+router.put("/change-batchAwaitTime", changeBatchAwaitTime);
 
 
 //--------------------Candidates-----and result--------------

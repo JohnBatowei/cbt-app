@@ -11,6 +11,8 @@ const { Result } = require("../models/result");
 const { default: mongoose } = require("mongoose");
 const scratchCardModel = require("../models/scratchCard");
 const { ExamInstances } = require("../models/examInstances");
+const classModel = require("../models/class");
+const batchAwaitTimeModel = require("../models/batchAwaitTime");
 // const createToken = require("../auth/jwt");
 
 // const maxAge = 3*24*60*60
@@ -103,78 +105,249 @@ router.post("/verify", async (req, res, next) => {
 
 
 
-const shuffleArray = (array) => {
-  let currentIndex = array.length, randomIndex;
+// Helper function to shuffle array
+function shuffleArray(array) {
+  return array.sort(() => Math.random() - 0.5);
+}
 
-  // While there remain elements to shuffle
-  while (currentIndex !== 0) {
-    // Pick a remaining element
-    randomIndex = Math.floor(Math.random() * currentIndex);
-    currentIndex--;
+// Format questions with images
+function formatQuestions(subject) {
+  const shuffled = shuffleArray(subject.questions).slice(0, 50);
+  return shuffled.map(q => ({
+    _id: q._id,
+    subjectName: subject.name,
+    subjectId: subject._id,
+    question: q.question,
+    option_A: q.option_A,
+    option_B: q.option_B,
+    option_C: q.option_C,
+    answer: q.answer,
+    selectedOption: "",
+    image: q.image ? `/uploads/${q.image}` : null
+  }));
+}
 
-    // Swap it with the current element
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+// Get subject timer (fallback to default if not found)
+function getSubjectTimer(classDoc, subjectId) {
+  const timerObj = classDoc.subjectTimers?.find(t => t.subjectId.toString() === subjectId.toString());
+  return timerObj ? timerObj.timer : classDoc.defaultTimer || 30;
+}
+
+// Batched login handler
+async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token) {
+  const subjectList = candidate.subject;
+  if (!subjectList || subjectList.length === 0) {
+    return res.status(400).json({ error: 'No subject found for candidate' });
   }
 
-  return array;
-};
+  const image = candidate.image ? `/uploads/${candidate.image}` : '';
+
+  // Set cookie
+  res.cookie('studentExamCookie', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 3 * 24 * 60 * 60 * 1000,
+    sameSite: 'Strict',
+    path: '/'
+  });
+
+  // If exam instance already exists
+  if (examInstnc) {
+    const completed = examInstnc.completedSubjectIds || [];
+
+    // Find the next uncompleted subject
+    const nextSubject = examInstnc.subject.find(s => !completed.includes(s._id.toString()) && !s.isCompleted);
+
+    if (!nextSubject) {
+      if (!examInstnc.isCompleted) {
+        examInstnc.isCompleted = true;
+        await examInstnc.save();
+      }
+      return res.status(200).json({ message: "All subjects completed", image, isCompleted: true });
+    }
+
+    //-----------------------------------------------------------------------
+        // Wait interval logic
+        try {
+          const batchConfig = await batchAwaitTimeModel.findOne();
+          const awaitTimeInMinutes = batchConfig?.batchAwaitTime || 15;
+    
+          const completedTimes = examInstnc.completedSubjectTimes || [];
+          const lastCompleted = completedTimes[completedTimes.length - 1];
+    
+          if (lastCompleted) {
+            const now = new Date();
+            const completedAt = new Date(lastCompleted.completedAt);
+            const elapsedMinutes = (now - completedAt) / (1000 * 60);
+    
+            if (elapsedMinutes < awaitTimeInMinutes) {
+              const remaining = Math.ceil(awaitTimeInMinutes - elapsedMinutes);
+              return res.status(200).json({
+                message: `Please wait ${remaining} more minute(s) before taking the next exam.`,
+                wait: true,
+                remainingMinutes: remaining
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Error checking batch wait time:", error);
+        }
+        //----------------------------------------------------------------------------
+
+    // Find the timer for the next subject
+    let timer = "0";
+    if (Array.isArray(examInstnc.subjectTimers)) {
+      const timerEntry = examInstnc.subjectTimers.find(t => t.subjectId.toString() === nextSubject._id.toString());
+      if (timerEntry) {
+        timer = timerEntry.timer;
+      }
+    }
+
+    // Respond with only the next subject
+    const {
+      studentId,
+      classId,
+      className,
+      candidateName,
+      profileCode,
+      completedSubjectIds,
+      isCompleted
+    } = examInstnc.toObject();
+
+    return res.status(200).json({
+      message: {
+        subject: [nextSubject],
+        studentId,
+        classId,
+        className,
+        timer,
+        candidateName,
+        profileCode,
+        completedSubjectIds,
+        isCompleted
+      },
+      image,
+      fetched: true
+    });
+  }
+
+  // If this is a new exam instance
+  const formattedSubjects = subjectList.map(subject => ({
+    _id: subject._id,
+    name: subject.name,
+    isCompleted: false,
+    questions: formatQuestions(subject),
+    timer: getSubjectTimer(classDoc, subject._id)
+  }));
+
+  const subjectTimers = subjectList.map(subject => ({
+    subjectId: new mongoose.Types.ObjectId(subject._id),
+    timer: getSubjectTimer(classDoc, subject._id).toString()
+  }));
+
+  const batchedInstance = new ExamInstances({
+    studentId: candidate._id,
+    profileCode: candidate.profileCode,
+    classId: candidate.classId,
+    className: candidate.className,
+    timer: candidate.timer,
+    candidateName: candidate.candidateName,
+    isBatched: true,
+    subject: formattedSubjects,
+    completedSubjectIds: [],
+    subjectTimers,
+    phone: candidate.phone,
+    endExam: candidate.endExam,
+    image,
+    isCompleted: false
+  });
+
+  const saved = await batchedInstance.save();
+  const firstSubject = saved.subject[0];
+
+  const savedObject = JSON.parse(JSON.stringify(saved));
+  savedObject.subject = firstSubject ? [firstSubject] : [];
+
+  // Find matching timer
+  let timer = "0";
+  if (firstSubject && Array.isArray(savedObject.subjectTimers)) {
+    const timerEntry = savedObject.subjectTimers.find(
+      entry => entry.subjectId.toString() === firstSubject._id.toString()
+    );
+    if (timerEntry) {
+      timer = timerEntry.timer;
+    }
+  }
+
+  const {
+    studentId,
+    classId,
+    className,
+    candidateName,
+    profileCode,
+    completedSubjectIds,
+    isCompleted
+  } = savedObject;
+
+  return res.status(200).json({
+    message: {
+      subject: savedObject.subject,
+      studentId,
+      classId,
+      className,
+      timer,
+      candidateName,
+      profileCode,
+      completedSubjectIds,
+      isCompleted
+    },
+    image,
+    fetched: true
+  });
+}
 
 
+
+
+// Main route
 router.post('/verify-login', async (req, res) => {
   try {
     const { profileCode } = req.body;
+    if (!profileCode) return res.status(400).json({ error: 'You did not enter a profile code' });
 
-    if (!profileCode) {
-      return res.status(400).json({ error: 'You did not enter a profile code' });
-    }
-    
     const [candidate, examInstnc] = await Promise.all([
       studentModel.findOne({ profileCode }).populate({
         path: 'subject',
-        populate: {
-          path: 'questions'
-        }
+        populate: { path: 'questions' }
       }),
       ExamInstances.findOne({ profileCode })
     ]);
 
-    if (!candidate) {
-      return res.status(400).json({ error: 'You are not authorized for an exam' });
-    }
+    if (!candidate) return res.status(400).json({ error: 'You are not authorized for an exam' });
+
+    const classDoc = await classModel.findById(candidate.classId);
+    if (!classDoc) return res.status(404).json({ error: 'Class not found for candidate' });
 
     const token = jwt.sign({ id: candidate._id }, process.env.SECRET, { expiresIn: '3d' });
 
-    const copiedSubjects = candidate.subject.map(subject => {
-      const shuffledQuestions = shuffleArray(subject.questions).slice(0, 50);
-      const questionsWithImages = shuffledQuestions.map(question => ({
-        _id: question._id,
-        subjectName: subject.name,
-        subjectId: subject._id,
-        question: question.question,
-        option_A: question.option_A,
-        option_B: question.option_B,
-        option_C: question.option_C,
-        answer: question.answer,
-        selectedOption: "",
-        image: question.image ? `/uploads/${question.image}` : null
-        // image: question.image ? `${req.protocol}://${req.get('host')}/uploads/${question.image}` : null
-      }));
+    if (classDoc.isBatched) {
+      return await handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token);
+    }
 
-      return {
-        _id: subject._id,
-        name: subject.name,
-        questions: questionsWithImages
-      };
-    });
+    // Regular (non-batched) flow
+    const copiedSubjects = candidate.subject.map(subject => ({
+      _id: subject._id,
+      name: subject.name,
+      questions: formatQuestions(subject)
+    }));
 
     const image = candidate.image ? `/uploads/${candidate.image}` : '';
-    // const image = candidate.image ? `${req.protocol}://${req.get('host')}/uploads/${candidate.image}` : '';
 
     res.cookie('studentExamCookie', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use true in production
-      maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
-      sameSite: 'Strict', // Adjust based on your setup
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 3 * 24 * 60 * 60 * 1000,
+      sameSite: 'Strict',
       path: '/'
     });
 
@@ -192,7 +365,7 @@ router.post('/verify-login', async (req, res) => {
       subject: copiedSubjects,
       phone: candidate.phone,
       endExam: candidate.endExam,
-      image: image
+      image
     });
 
     const savedInstance = await newExamInstance.save();
@@ -201,7 +374,7 @@ router.post('/verify-login', async (req, res) => {
   } catch (error) {
     console.error("Error verifying login:", error);
     if (!res.headersSent) {
-     return res.status(500).send("Server error.");
+      return res.status(500).send("Server error.");
     }
   }
 });

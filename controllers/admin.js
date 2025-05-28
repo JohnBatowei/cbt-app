@@ -13,47 +13,97 @@ const headersModel = require("../models/headers");
 const scratchCardModel = require("../models/scratchCard");
 const adminModel = require("../models/admin");
 const profileCodeModel = require('../models/profileCode');
+const batchAwaitTimeModel = require('../models/batchAwaitTime');
 
 
 //--------------------create--a--class-------------------------------------------------------
-module.exports.createClass = asyncHandler(async (req, res) => {
-  const { name, timer, subjects, profileCodeInitials } = req.body;
+// module.exports.createClass = asyncHandler(async (req, res) => {
+//   const { name, timer, subjects, profileCodeInitials } = req.body;
 
-  // return console.log(subjects)
-  // Validate required fields
-  if (!name || !timer || !Array.isArray(subjects) || !profileCodeInitials) {
+//   // return console.log(subjects)
+//   // Validate required fields
+//   if (!name || !timer || !Array.isArray(subjects) || !profileCodeInitials) {
+//     return res.status(400).json({ message: "Invalid input data." });
+//   }
+//   try {
+//     const name2 = name
+//     const profileCodeInitialsUppercase = profileCodeInitials.toUpperCase()
+//     const findClasss = await classModel.findOne({ name: name2 });
+
+//     if (findClasss) {
+//       return res.status(400).json({ message: `${name2} already exist` });
+//     }
+
+//     // Fetch subject IDs
+//     const subjectQueries = subjects.map((subjectId) =>
+//       subjectModel.findOne({ _id: subjectId }).lean()
+//     );
+//     const questionIds = await Promise.all(subjectQueries);
+
+//     // return console.log(subjects,questionsIds)
+//     const newClass = new classModel({
+//       name: name2,
+//       timer,
+//       subject: questionIds, // Assuming `subjects` are valid ObjectId references
+//       profileCodeInitials: profileCodeInitialsUppercase,
+//     });
+
+//     await newClass.save();
+//     res.status(200).json({ message: `${name} class created successfully !!!` });
+//   } catch (error) {
+//     console.error("Error creating class:", error);
+//     res.status(500).send("Server error.");
+//   }
+// });
+module.exports.createClass = asyncHandler(async (req, res) => {
+  const { name, timer, subjects, profileCodeInitials, isBatched, subjectTimers } = req.body;
+
+  // Basic validation
+  if (!name || !Array.isArray(subjects) || !profileCodeInitials) {
     return res.status(400).json({ message: "Invalid input data." });
   }
+
+  if (!isBatched && !timer) {
+    return res.status(400).json({ message: "Timer is required for unbatched classes." });
+  }
+
+  if (isBatched && (!Array.isArray(subjectTimers) || subjectTimers.length === 0)) {
+    return res.status(400).json({ message: "Batch mode requires subjectTimers." });
+  }
+
   try {
-    const name2 = name
-    const profileCodeInitialsUppercase = profileCodeInitials.toUpperCase()
-    const findClasss = await classModel.findOne({ name: name2 });
+    const name2 = name.trim();
+    const profileCodeInitialsUppercase = profileCodeInitials.toUpperCase();
 
-    if (findClasss) {
-      return res.status(400).json({ message: `${name2} already exist` });
+    const findClass = await classModel.findOne({ name: name2 });
+    if (findClass) {
+      return res.status(400).json({ message: `${name2} already exists` });
     }
-
-    // Fetch subject IDs
-    const subjectQueries = subjects.map((subjectId) =>
-      subjectModel.findOne({ _id: subjectId }).lean()
+    // console.log(findClass)
+    const fetchedSubjects = await Promise.all(
+      subjects.map((subjectId) => subjectModel.findById(subjectId).lean())
     );
-    const questionIds = await Promise.all(subjectQueries);
 
-    // return console.log(subjects,questionsIds)
+    const  batchAwaitTime = await batchAwaitTimeModel.findOne({set: true});
+    if (!batchAwaitTime) batchAwaitTimeModel.create(req.body);
+    
     const newClass = new classModel({
       name: name2,
-      timer,
-      subject: questionIds, // Assuming `subjects` are valid ObjectId references
+      timer: timer || "0", // if not batched, timer is required
+      subject: fetchedSubjects,
       profileCodeInitials: profileCodeInitialsUppercase,
+      isBatched: !!isBatched,
+      subjectTimers: isBatched ? subjectTimers : [],
     });
 
     await newClass.save();
-    res.status(200).json({ message: `${name} class created successfully !!!` });
+    res.status(200).json({ message: `${name2} class created successfully!` });
   } catch (error) {
     console.error("Error creating class:", error);
     res.status(500).send("Server error.");
   }
 });
+
 
 module.exports.deleteClass = asyncHandler(async (req, res) => {
   const id = req.params.id;
@@ -79,7 +129,7 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, timer, subjects, profileCodeInitials } = req.body;
 
-  // console.log('Request Body:', req.body);
+//  return console.log('object', req.body);
   // console.log('Class ID:', id);
   const profileCodeInitial = profileCodeInitials.toUpperCase()
 
@@ -118,6 +168,68 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+
+module.exports.updateClassBatch = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { name, profileCodeInitials, subjects } = req.body;
+console.log("Object", req.body);
+  try {
+    // Validate class ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid class ID" });
+    }
+
+    // Validate subjects array
+    if (
+      !Array.isArray(subjects) ||
+      !subjects.every(
+        (s) =>
+          s.subjectId &&
+          mongoose.Types.ObjectId.isValid(s.subjectId) &&
+          s.timer &&
+          !isNaN(s.timer) &&
+          Number(s.timer) >= 1
+      )
+    ) {
+      return res.status(400).json({ message: "Invalid subjects or timers" });
+    }
+
+    // Extract subject IDs for the `subject` field
+    const subjectIds = subjects.map((s) => s.subjectId);
+
+    // Find the existing class
+    const existingClass = await classModel.findById(id);
+    if (!existingClass) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
+    // Make sure this class is marked as batched
+    if (!existingClass.isBatched) {
+      return res.status(400).json({ message: "Class is not batched" });
+    }
+
+    // Prepare update data
+    const updateData = {
+      name,
+      profileCodeInitials: profileCodeInitials.toUpperCase(),
+      subject: subjectIds, // Array of ObjectIds
+      subjectTimers: subjects, // Array of { subjectId, timer }
+      timer: undefined, // Clear the single timer since this is batched
+    };
+
+    const updatedClass = await classModel.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    return res.status(200).json({ message: `${name} has been updated successfully!`, updatedClass });
+  } catch (error) {
+    console.error("Batch update error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 //----------------------------End of Class---------------------------------------------------
 
 //------------------------Profile code generator-------------------------------------------
@@ -885,7 +997,24 @@ module.exports.changeProfileName= asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Profile name updated successfully', newName : savedDocs.name});
 });
 
+module.exports.changeBatchAwaitTime = asyncHandler(async (req, res) => {
+  // return console.log(req.body);
+  if (!req.body.batchAwaitTime) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
 
+  const  batchAwaitTime = await batchAwaitTimeModel.findOne({set: true});
+  if (!batchAwaitTime) {
+    batchAwaitTimeModel.create(req.body)
+    return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
+  }
+
+  batchAwaitTime.batchAwaitTime = req.body.batchAwaitTime; 
+  const batchAwaitTimeSave = await batchAwaitTime.save();
+  // console.log(batchAwaitTimeSave.batchAwaitTime);
+
+  res.status(200).json({ message: 'Batch await time has been set to ', newName : batchAwaitTimeSave.batchAwaitTime});
+});
 
 //--------------delete candidates by class and result---------------------
 

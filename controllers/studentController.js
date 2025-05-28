@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const asyncHandler = require("express-async-handler");
 const studentModel = require("../models/student");
 const { Result } = require("../models/result");
@@ -62,11 +63,15 @@ module.exports.getStudentDetails = asyncHandler(async (req, res) => {
 // });
 
 
+
+
 // module.exports.updateExamInstance = asyncHandler(async (req, res) => {
 //   try {
 //     const studentId = req.student.toString();
-//     const { classId, className, candidateName, profileCode, subjects,timer } = req.body;
-// console.log(candidateName, timer)
+//     const { classId, className, candidateName, profileCode, subjects, timer } = req.body;
+
+//     console.log(`Updating exam for: ${candidateName}, Timer sent: ${timer}`);
+
 //     // Find the existing exam instance for the student by profileCode
 //     let examInstance = await ExamInstances.findOne({ profileCode });
 
@@ -74,38 +79,56 @@ module.exports.getStudentDetails = asyncHandler(async (req, res) => {
 //       return res.status(404).json({ message: 'Exam instance not found' });
 //     }
 
-//         // Update the timer directly on the exam instance
-//         const t = timer > examInstance.timer ? examInstance.timer: timer
-//         examInstance.timer = t;
+//     // Ensure timer is only updated if it's less than the saved timer
+//     examInstance.timer = Math.min(timer, examInstance.timer);
 
+//     // Create a Map for faster subject lookup
+//     const subjectMap = new Map(
+//       examInstance.subject.map(sub => [sub._id.toString(), sub])
+//     );
+
+//     // Loop through subjects and update respective selectedOptions
 //     subjects.forEach(subjectToUpdate => {
-//       const instanceSubject = examInstance.subject.find(sub => sub._id === subjectToUpdate.subjectId);
-      
+//       const instanceSubject = subjectMap.get(subjectToUpdate.subjectId);
+
 //       if (instanceSubject) {
+//         // Map questions for fast access
+//         const questionMap = new Map(
+//           instanceSubject.questions.map(q => [q._id.toString(), q])
+//         );
+
 //         subjectToUpdate.questions.forEach(questionToUpdate => {
-//           const instanceQuestion = instanceSubject.questions.find(q => q._id === questionToUpdate.questionId);
-          
+//           const instanceQuestion = questionMap.get(questionToUpdate.questionId);
+
 //           if (instanceQuestion) {
-//             instanceQuestion.selectedOption = questionToUpdate.selectedOption || instanceQuestion.selectedOption;
+//             instanceQuestion.selectedOption =
+//               questionToUpdate.selectedOption || instanceQuestion.selectedOption;
 //           }
 //         });
 //       }
 //     });
-    
+
 //     // Save the updated exam instance
 //     await examInstance.save();
 
 //     res.status(200).json({ message: 'Exam instance updated successfully' });
 //   } catch (error) {
-//     console.error(error);
-//    return res.status(500).json({ message: 'Server error' });
+//     console.error("Error updating exam instance:", error);
+//     return res.status(500).json({ message: 'Server error' });
 //   }
 // });
-
 module.exports.updateExamInstance = asyncHandler(async (req, res) => {
   try {
     const studentId = req.student.toString();
-    const { classId, className, candidateName, profileCode, subjects, timer } = req.body;
+    const {
+      classId,
+      className,
+      candidateName,
+      profileCode,
+      subjects,
+      timer,
+      completedSubjectId
+    } = req.body;
 
     console.log(`Updating exam for: ${candidateName}, Timer sent: ${timer}`);
 
@@ -116,44 +139,79 @@ module.exports.updateExamInstance = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Exam instance not found' });
     }
 
-    // Ensure timer is only updated if it's less than the saved timer
-    examInstance.timer = Math.min(timer, examInstance.timer);
+    // ✅ Update timer if lower
+    if (timer && examInstance.timer) {
+      examInstance.timer = Math.min(Number(timer), Number(examInstance.timer));
+    }
 
-    // Create a Map for faster subject lookup
+    // ✅ Create a Map for faster subject lookup
     const subjectMap = new Map(
       examInstance.subject.map(sub => [sub._id.toString(), sub])
     );
 
-    // Loop through subjects and update respective selectedOptions
+    // ✅ Update answers with full breakdown
     subjects.forEach(subjectToUpdate => {
       const instanceSubject = subjectMap.get(subjectToUpdate.subjectId);
-
       if (instanceSubject) {
-        // Map questions for fast access
         const questionMap = new Map(
           instanceSubject.questions.map(q => [q._id.toString(), q])
         );
 
         subjectToUpdate.questions.forEach(questionToUpdate => {
           const instanceQuestion = questionMap.get(questionToUpdate.questionId);
-
           if (instanceQuestion) {
-            instanceQuestion.selectedOption =
-              questionToUpdate.selectedOption || instanceQuestion.selectedOption;
+            // ✅ Always update selectedOption
+            instanceQuestion.selectedOption = questionToUpdate.selectedOption || instanceQuestion.selectedOption;
+
+            // ✅ Update for unbatched
+            if (!examInstance.isBatched) {
+              if (questionToUpdate.questionText) instanceQuestion.questionText = questionToUpdate.questionText;
+              if (questionToUpdate.options) instanceQuestion.options = questionToUpdate.options;
+              if (questionToUpdate.correctAnswer) instanceQuestion.correctAnswer = questionToUpdate.correctAnswer;
+              if (typeof questionToUpdate.isCorrect === 'boolean') {
+                instanceQuestion.isCorrect = questionToUpdate.isCorrect;
+              }
+            }
+
+            // ✅ For batched exams, populate full question data
+            if (examInstance.isBatched) {
+              instanceQuestion.subjectName = questionToUpdate.subjectName || instanceQuestion.subjectName;
+              instanceQuestion.subjectId = questionToUpdate.subjectId || instanceQuestion.subjectId;
+              instanceQuestion.question = questionToUpdate.question || instanceQuestion.question;
+              instanceQuestion.option_A = questionToUpdate.option_A || instanceQuestion.option_A;
+              instanceQuestion.option_B = questionToUpdate.option_B || instanceQuestion.option_B;
+              instanceQuestion.option_C = questionToUpdate.option_C || instanceQuestion.option_C;
+              instanceQuestion.answer = questionToUpdate.answer || instanceQuestion.answer;
+              instanceQuestion.image = questionToUpdate.image ?? instanceQuestion.image;
+              if (typeof questionToUpdate.isCorrect === 'boolean') {
+                instanceQuestion.isCorrect = questionToUpdate.isCorrect;
+              }
+            }
           }
         });
       }
     });
 
-    // Save the updated exam instance
+    // ✅ Handle batched subject completion
+    if (examInstance.isBatched && completedSubjectId) {
+      const completedIdStr = completedSubjectId.toString();
+      if (!examInstance.completedSubjectIds.includes(completedIdStr)) {
+        examInstance.completedSubjectIds.push(completedIdStr);
+      }
+    }
+
+    // ✅ Save the updated exam instance
     await examInstance.save();
 
-    res.status(200).json({ message: 'Exam instance updated successfully' });
+    return res.status(200).json({ message: 'Exam instance updated successfully' });
+
   } catch (error) {
     console.error("Error updating exam instance:", error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
+
+
 
 // controller/studentController.js
 module.exports.markQuestion = asyncHandler(async (req, res) => {
@@ -161,6 +219,15 @@ module.exports.markQuestion = asyncHandler(async (req, res) => {
     const studentId = req.student;
     const { classId, className, candidateName, profileCode, subjects } = req.body;
 
+    const examInstance = await ExamInstances.findOne({ profileCode });
+    if (!examInstance) {
+      return res.status(404).json({ message: 'Exam instance not found' });
+    }
+
+    if(examInstance.isBatched){
+      return handleIsBatched(req,res,examInstance,studentId)
+    }
+    
     let totalScore = 0;
 
     const markedSubjects = subjects.map(subject => {
@@ -261,73 +328,220 @@ module.exports.markQuestion = asyncHandler(async (req, res) => {
 });
 
 
+const handleIsBatched = asyncHandler(async (req, res, examInstance, studentId) => {
+  const { classId, className, candidateName, profileCode, subjects } = req.body;
+
+  if (!Array.isArray(subjects) || subjects.length === 0) {
+    return res.status(400).json({ message: "Subjects are missing or invalid." });
+  }
+
+  for (const subject of subjects) {
+    const totalQuestions = subject.questions.length;
+    if (!totalQuestions) continue;
+
+    let correctAnswers = 0;
+
+    const answeredQuestions = subject.questions.map(q => {
+      // console.log('investigating :',q.question);
+      // console.log('question  :',q);
+
+      const selKey = (q.selectedOption || '').toLowerCase();
+      const corrKey = (q.correctAnswer || '').toLowerCase();
+      const answered  = !!selKey;  
+      const isCorrect = answered && selKey === corrKey;
+
+      if (isCorrect) correctAnswers++;
 
 
-// module.exports.markQuestion = asyncHandler(async (req, res) => {
-//   try {
-//     const studentId = req.student; // The authenticated student's ID
-//     const { classId, className, candidateName, profileCode, subjects } = req.body;
+      const questionId = q.questionId || q._id;
+      const questionText =   q.question;
+     const  selectedOption = selKey;      // '' if skipped
+     const correctAnswer =  corrKey;
 
-//     let totalScore = 0;
-//     const markedSubjects = subjects.map((subject) => {
-//       const totalQuestions = subject.questions.length;
+     console.log('Objetcs : :',questionId,questionText,selectedOption,correctAnswer);
+      const keyToText = key => {
+        switch (key) {
+          case 'a': return q.option_A;
+          case 'b': return q.option_B;
+          case 'c': return q.option_C;
+          default:  return '';
+        }
+      };
 
-//       // If there are no questions in the subject, set score to 0
-//       if (totalQuestions === 0) {
-//         return {
-//           subjectId: subject.subjectId,
-//           subjectName: subject.subjectName,
-//           score: 0,
-//         };
-//       }
 
-//       let correctAnswers = 0;
-//       subject.questions.forEach((question) => {
-//         if (question.selectedOption === question.correctAnswer) {
-//           correctAnswers += 1;
-//         }
-//       });
+      const doc = {
+        questionId,
+        questionText,
+        options: {
+          A: q.option_A,
+          B: q.option_B,
+          C: q.option_C,
+        },
+        selectedOption,       // '' if skipped
+        correctAnswer,
+        isCorrect                       // <-- now guaranteed Boolean
+      };
 
-//       // Calculate the score for the subject, ensuring it's a valid number
-//       const subjectScore = (correctAnswers / totalQuestions) * 100 || 0;
-//       totalScore += subjectScore;
+      if (!isCorrect) {
+        doc.selectedText = keyToText(selKey);   // '' when skipped
+        doc.correctText  = keyToText(corrKey);
+      }
 
-//       return {
-//         subjectId: subject.subjectId,
-//         subjectName: subject.subjectName,
-//         score: subjectScore,
-//       };
-//     });
+      return doc;
 
-//     // Save the result in batch (use bulk operations)
-//     const result = new Result({
-//       studentId,
-//       classId,
-//       className,
-//       candidateName,
-//       profileCode,
-//       totalScore: totalScore || 0, // Ensure totalScore is a valid number
-//       subjects: markedSubjects,
-//     });
+    });
 
-//     // Use bulkWrite or create in bulk if handling multiple results
-//     const markedResult = await result.save();
 
-//     // Handling multiple deletions in parallel using Promise.all
-//     const [studentDeleteResult, examInstanceDeleteResult] = await Promise.all([
-//       studentModel.findByIdAndDelete({ _id: markedResult.studentId }), // Delete student record
-//       ExamInstances.findOneAndDelete({ profileCode }), // Delete exam instance
-//     ]);
 
-//     // You can return the results, but note it's improved with the optimized approach
-//     res.status(200).json({
-//       message: "Results marked successfully",
-//       totalScore,
-//       subjects: markedSubjects,
-//       markedResult: markedResult._id,
-//     });
-//   } catch (error) {
-//     console.error("Error marking questions:", error);
-//     return res.status(500).json({ error: "Server error" });
-//   }
-// });
+    const subjectScore = (correctAnswers / totalQuestions) * 100;
+
+    // Find and update the corresponding subject in the examInstance
+    const subjectIndex = examInstance.subject.findIndex(
+      s => s.subjectId === subject.subjectId || (s._id && s._id.toString() === subject.subjectId.toString())
+    );
+
+    if (subjectIndex !== -1) {
+      const targetSubject = examInstance.subject[subjectIndex];
+
+      targetSubject.questions = answeredQuestions;
+      targetSubject.score = subjectScore;
+      targetSubject.subjectId = subject.subjectId;
+      targetSubject.subjectName = subject.subjectName;
+      targetSubject.isCompleted = true;
+
+      // Update completed subjects tracker
+      const subIdStr = subject.subjectId.toString();
+      if (!examInstance.completedSubjectIds.includes(subIdStr)) {
+        examInstance.completedSubjectIds.push(subIdStr);
+      }
+            // ✅✅✅ START: ADDING completedSubjectTimes LOGIC
+            const alreadyLogged = examInstance.completedSubjectTimes.some(
+              t => t.subjectId.toString() === subject.subjectId.toString()
+            );
+            if (!alreadyLogged) {
+              examInstance.completedSubjectTimes.push({
+                subjectId: new mongoose.Types.ObjectId(subject.subjectId),
+                completedAt: new Date()
+              });
+            }
+            // ✅✅✅ END
+      
+    }
+  }
+
+  // Check if all subjects are completed
+  const allCompleted = examInstance.subject.every(s => s.isCompleted === true);
+  examInstance.isCompleted = allCompleted;
+
+ const allinstanceResult =  await examInstance.save();
+
+  if (!allCompleted) {
+    return res.status(200).json({
+      message: "Subject(s) marked. Waiting for remaining subjects before finalizing.",
+      completedSubjects: examInstance.completedSubjectIds.length,
+      totalSubjects: examInstance.subject.length,
+      updatedSubjects: examInstance.subject
+    });
+  }
+
+  // console.log('allinstanceResult', allinstanceResult);
+
+  // If all subjects are completed, finalize the result
+  return await handleBatchedCompletion(
+    allinstanceResult,
+    res,
+    studentId,
+    classId,
+    className,
+    candidateName,
+    profileCode
+  );
+});
+
+
+const handleBatchedCompletion = async (
+  allinstanceResult,
+  res,
+  studentId,
+  classId,
+  className,
+  candidateName,
+  profileCode
+) => {
+  try {
+    // ✅ Ensure all subjects are completed before finalizing
+    const allCompleted = allinstanceResult.subject.every(subj => subj.isCompleted === true);
+    if (!allCompleted) {
+      return res.status(400).json({
+        message: 'Not all subjects are completed. Cannot finalize the result.',
+        completedSubjects: allinstanceResult.subject.filter(s => s.isCompleted).length,
+        totalSubjects: allinstanceResult.subject.length
+      });
+    }
+
+    // ✅ Compute the total score
+    const totalScore = allinstanceResult.subject.reduce((sum, subj) => {
+      return sum + (typeof subj.score === 'number' ? subj.score : 0);
+    }, 0);
+
+    const formattedSubjects = allinstanceResult.subject.map(subj => {
+      // Log all questions first
+      subj.questions.forEach((q, i) => {
+        console.log(`Question #${i}`, q);
+      });
+    
+      // Then return the mapped subject object
+      return {
+        subjectId: subj.subjectId || subj._id,
+        subjectName: subj.subjectName || subj.name,
+        score: subj.score,
+
+
+        questions: subj.questions.map(q => ({
+          questionId: q.questionId,
+          questionText: q.questionText || '',
+          options: q.options,
+          selectedOption: q.selectedOption || '',
+          correctAnswer: q.correctAnswer || q.answer || '',
+          isCorrect: !!q.isCorrect,
+        }))
+      };
+    });
+    
+    
+
+  
+
+    // ✅ Save the final result document
+    const finalResult = await Result.create({
+      studentId,
+      classId,
+      className,
+      candidateName,
+      profileCode,
+      totalScore,
+      subjects: formattedSubjects
+    });
+
+    // ✅ Clean up: remove student and instance
+    await Promise.all([
+      studentModel.findByIdAndDelete(studentId),
+      ExamInstances.findOneAndDelete({ profileCode })
+    ]);
+
+    // ✅ Respond
+    return res.status(200).json({
+      message: 'All subjects marked and result finalized (batched).',
+      totalScore,
+      subjects: finalResult.subjects,
+      markedResult: finalResult._id
+    });
+
+  } catch (error) {
+    console.error('Error finalizing batched result:', error);
+    return res.status(500).json({
+      message: 'Failed to finalize result due to server error',
+      error: error.message
+    });
+  }
+};
