@@ -869,6 +869,17 @@ module.exports.allHeaders = asyncHandler(async (req, res) => {
   }
 });
 
+module.exports.getBatchAwwaitTime = asyncHandler(async (req, res) => {
+  try {
+    const batchTime = await batchAwaitTimeModel.findOne({set: true}).lean();
+    console.log(batchTime);
+    res.status(200).json({ data: batchTime });
+  } catch (error) {
+    console.error("Error fetching headers:", error);
+    res.status(500).json({ data: "Server error" });
+  }
+});
+
 
 
 
@@ -1005,8 +1016,9 @@ module.exports.changeBatchAwaitTime = asyncHandler(async (req, res) => {
 
   const  batchAwaitTime = await batchAwaitTimeModel.findOne({set: true});
   if (!batchAwaitTime) {
-    batchAwaitTimeModel.create(req.body)
-    return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
+   const newBatch = await batchAwaitTimeModel.create(req.body)
+    // return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
+    return res.status(200).json({ message: 'batchAwaitTime created for the first time', newName : newBatch.batchAwaitTime});
   }
 
   batchAwaitTime.batchAwaitTime = req.body.batchAwaitTime; 

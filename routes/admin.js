@@ -31,6 +31,7 @@ const {
   deleteClassResults,
   updateClassBatch,
   changeBatchAwaitTime,
+  getBatchAwwaitTime,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -82,6 +83,7 @@ router.get("/class-registered-students/download-excel/:id", downloadClassExcel);
 //-------------------change-----headers------------------------
 router.post("/change-headers/:id", changeHeaders);
 router.get("/all-headers", allHeaders);
+router.get("/batchAwaitTime", getBatchAwwaitTime);
 
 router.post("/create-scratch-card", scratchCard);
 router.get("/get-scratch-card", getScratchCard);
