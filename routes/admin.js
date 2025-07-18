@@ -32,6 +32,7 @@ const {
   updateClassBatch,
   changeBatchAwaitTime,
   getBatchAwwaitTime,
+  numberOfQuestionsPerSubjects,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -93,6 +94,7 @@ router.put("/change-password", changePassword);
 router.put("/update-profile-image", upload.single("image"), changeProfileImage);
 router.put("/name-change", changeProfileName);
 router.put("/change-batchAwaitTime", changeBatchAwaitTime);
+router.put("/number-of-questions", numberOfQuestionsPerSubjects);
 
 
 //--------------------Candidates-----and result--------------

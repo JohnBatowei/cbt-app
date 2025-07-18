@@ -34,6 +34,7 @@ const ExamInstance = new mongoose.Schema(
                 option_A: { type: String },
                 option_B: { type: String },
                 option_C: { type: String },
+                option_D: { type: String },
                 answer: { type: String },
                 selectedOption: { type: String },
                 image: { type: String },

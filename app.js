@@ -18,6 +18,7 @@ const adminRouter = require('./routes/admin');
 const studentRouter = require('./routes/studentApi');
 
 
+
 // CORS Configuration
 const optionsCors = {
   origin: "*",
@@ -54,13 +55,15 @@ app.set("view engine", "ejs");
 app.use("/api/api/index", indexRouter);
 app.use("/api/st", studentRouter);
 app.use("/api", adminRouter);
-
+app.use("test",require('./routes/test.public.data'))
 
 // Test API Endpoint
 app.post("/api-test", async (req, res) => {
   console.log(req.body);
   res.status(200).send("Request received successfully!");
 });
+
+
 
 // Fallback Route for SPA (Single Page Application)
 app.get("*", (req, res) => {
@@ -74,7 +77,7 @@ mongoose.set('strictQuery', true);
 mongoose.connect(uri)
   .then(() => {
     console.log(`Connected to MongoDB`);
-    app.listen(port, () => {
+    app.listen(port,host, () => {
       console.log(`AriTron CBT application listening on port ${port}. http://localhost:${port}`);
     });
   })

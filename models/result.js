@@ -7,6 +7,7 @@ const questionBreakdownSchema = new mongoose.Schema({
       A: String,
       B: String,
       C: String,
+      D: String,
     },
     selectedOption: { type: String },
     correctAnswer:  { type: String },

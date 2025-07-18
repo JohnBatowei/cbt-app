@@ -13,6 +13,7 @@ const scratchCardModel = require("../models/scratchCard");
 const { ExamInstances } = require("../models/examInstances");
 const classModel = require("../models/class");
 const batchAwaitTimeModel = require("../models/batchAwaitTime");
+const numberOfQuestionPerSubjectModel = require("../models/numberOFQuestionPerSubject");
 // const createToken = require("../auth/jwt");
 
 // const maxAge = 3*24*60*60
@@ -40,7 +41,7 @@ router.post("/",upload.single("file"), async (req, res) => {
         name: req.body.name,
         email: tEmail,
         password: req.body.password,
-        image: req.file.filenamez
+        image: req.file.filename
       });
       form.save().then(data => {
 
@@ -103,16 +104,14 @@ router.post("/verify", async (req, res, next) => {
 });
 
 
-
-
 // Helper function to shuffle array
 function shuffleArray(array) {
   return array.sort(() => Math.random() - 0.5);
 }
 
 // Format questions with images
-function formatQuestions(subject) {
-  const shuffled = shuffleArray(subject.questions).slice(0, 50);
+function formatQuestions(subject ,numOfQuestions) {
+  const shuffled = shuffleArray(subject.questions).slice(0, numOfQuestions?.numberOfQuestionPerSubject || 50);
   return shuffled.map(q => ({
     _id: q._id,
     subjectName: subject.name,
@@ -121,6 +120,7 @@ function formatQuestions(subject) {
     option_A: q.option_A,
     option_B: q.option_B,
     option_C: q.option_C,
+    option_D: q.option_D,
     answer: q.answer,
     selectedOption: "",
     image: q.image ? `/uploads/${q.image}` : null
@@ -134,11 +134,32 @@ function getSubjectTimer(classDoc, subjectId) {
 }
 
 // Batched login handler
-async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token) {
+async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token,numOfQuestions) {
   const subjectList = candidate.subject;
   if (!subjectList || subjectList.length === 0) {
     return res.status(400).json({ error: 'No subject found for candidate' });
   }
+
+  const subjectNames = subjectList.map(S=> S.name)
+
+// Step 1
+const getListSubject = subjectList.map(S => ({
+  name: S.name,
+  subjectId: String(S._id)
+}));
+
+// Step 2: Fallback to empty array if completedSubjectTimes is null or undefined
+const completedIds = new Set(
+  (examInstnc?.completedSubjectTimes || []).map(y => String(y.subjectId))
+);
+
+// Step 3
+const getSubjectStatus = getListSubject.map(D => ({
+  subjectNames: D.name,
+  isComplete: completedIds.has(D.subjectId)
+}));
+
+
 
   const image = candidate.image ? `/uploads/${candidate.image}` : '';
 
@@ -211,7 +232,8 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
       candidateName,
       profileCode,
       completedSubjectIds,
-      isCompleted
+      isCompleted,
+      isBatched
     } = examInstnc.toObject();
 
     return res.status(200).json({
@@ -224,7 +246,10 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
         candidateName,
         profileCode,
         completedSubjectIds,
-        isCompleted
+        isCompleted,
+        isBatched,
+        subjectNames,
+        getSubjectStatus
       },
       image,
       fetched: true
@@ -236,7 +261,7 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
     _id: subject._id,
     name: subject.name,
     isCompleted: false,
-    questions: formatQuestions(subject),
+    questions: formatQuestions(subject,numOfQuestions),
     timer: getSubjectTimer(classDoc, subject._id)
   }));
 
@@ -259,7 +284,9 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
     phone: candidate.phone,
     endExam: candidate.endExam,
     image,
-    isCompleted: false
+    isCompleted: false,
+    subjectNames,
+    getSubjectStatus
   });
 
   const saved = await batchedInstance.save();
@@ -286,7 +313,8 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
     candidateName,
     profileCode,
     completedSubjectIds,
-    isCompleted
+    isCompleted,
+    isBatched
   } = savedObject;
 
   return res.status(200).json({
@@ -299,7 +327,10 @@ async function handleBatchedLogin(req, res, candidate, classDoc, examInstnc, tok
       candidateName,
       profileCode,
       completedSubjectIds,
-      isCompleted
+      isCompleted,
+      subjectNames,
+      getSubjectStatus,
+      isBatched
     },
     image,
     fetched: true
@@ -315,12 +346,13 @@ router.post('/verify-login', async (req, res) => {
     const { profileCode } = req.body;
     if (!profileCode) return res.status(400).json({ error: 'You did not enter a profile code' });
 
-    const [candidate, examInstnc] = await Promise.all([
+    const [candidate, examInstnc, numOfQuestions] = await Promise.all([
       studentModel.findOne({ profileCode }).populate({
         path: 'subject',
         populate: { path: 'questions' }
       }),
-      ExamInstances.findOne({ profileCode })
+      ExamInstances.findOne({ profileCode }),
+      numberOfQuestionPerSubjectModel.findOne({})
     ]);
 
     if (!candidate) return res.status(400).json({ error: 'You are not authorized for an exam' });
@@ -331,14 +363,14 @@ router.post('/verify-login', async (req, res) => {
     const token = jwt.sign({ id: candidate._id }, process.env.SECRET, { expiresIn: '3d' });
 
     if (classDoc.isBatched) {
-      return await handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token);
+      return await handleBatchedLogin(req, res, candidate, classDoc, examInstnc, token ,numOfQuestions);
     }
 
     // Regular (non-batched) flow
     const copiedSubjects = candidate.subject.map(subject => ({
       _id: subject._id,
       name: subject.name,
-      questions: formatQuestions(subject)
+      questions: formatQuestions(subject,numOfQuestions)
     }));
 
     const image = candidate.image ? `/uploads/${candidate.image}` : '';
@@ -496,7 +528,7 @@ router.post('/st-check-result', async (req, res) => {
 
 
 router.post("/student-logout",(req, res) => {
-  console.log('got cookies');
+  // console.log('got cookies');
   res.clearCookie('studentExamCookie', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

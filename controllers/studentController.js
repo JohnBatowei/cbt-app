@@ -30,93 +30,11 @@ module.exports.getStudentDetails = asyncHandler(async (req, res) => {
     // Respond with the found student details
     res.status(200).json({ data: student });
   } catch (error) {
-    console.error("Error fetching student details:", error);
+    // console.error("Error fetching student details:", error);
    return res.status(500).json({ error: "Server error" });
   }
 });
-// module.exports.getStudentDetails = asyncHandler(async (req, res) => {
-//   try {
-//     const studentId = req.student;
 
-//     if (!studentId) {
-//       return res.status(401).json({ error: "Unauthorized: No student ID provided" });
-//     }
-
-//     // Exclude questions, only return subject names or basic info
-//     const student = await studentModel.findById(studentId)
-//       .select("candidateName className profileCode subject") // pick what you need
-//       .populate({
-//         path: "subject",
-//         select: "name", // exclude questions by not selecting them
-//       })
-//       .lean();
-
-//     if (!student) {
-//       return res.status(404).json({ error: "Student not found" });
-//     }
-
-//     res.status(200).json({ data: student });
-//   } catch (error) {
-//     console.error("Error fetching student details:", error);
-//     return res.status(500).json({ error: "Server error" });
-//   }
-// });
-
-
-
-
-// module.exports.updateExamInstance = asyncHandler(async (req, res) => {
-//   try {
-//     const studentId = req.student.toString();
-//     const { classId, className, candidateName, profileCode, subjects, timer } = req.body;
-
-//     console.log(`Updating exam for: ${candidateName}, Timer sent: ${timer}`);
-
-//     // Find the existing exam instance for the student by profileCode
-//     let examInstance = await ExamInstances.findOne({ profileCode });
-
-//     if (!examInstance) {
-//       return res.status(404).json({ message: 'Exam instance not found' });
-//     }
-
-//     // Ensure timer is only updated if it's less than the saved timer
-//     examInstance.timer = Math.min(timer, examInstance.timer);
-
-//     // Create a Map for faster subject lookup
-//     const subjectMap = new Map(
-//       examInstance.subject.map(sub => [sub._id.toString(), sub])
-//     );
-
-//     // Loop through subjects and update respective selectedOptions
-//     subjects.forEach(subjectToUpdate => {
-//       const instanceSubject = subjectMap.get(subjectToUpdate.subjectId);
-
-//       if (instanceSubject) {
-//         // Map questions for fast access
-//         const questionMap = new Map(
-//           instanceSubject.questions.map(q => [q._id.toString(), q])
-//         );
-
-//         subjectToUpdate.questions.forEach(questionToUpdate => {
-//           const instanceQuestion = questionMap.get(questionToUpdate.questionId);
-
-//           if (instanceQuestion) {
-//             instanceQuestion.selectedOption =
-//               questionToUpdate.selectedOption || instanceQuestion.selectedOption;
-//           }
-//         });
-//       }
-//     });
-
-//     // Save the updated exam instance
-//     await examInstance.save();
-
-//     res.status(200).json({ message: 'Exam instance updated successfully' });
-//   } catch (error) {
-//     console.error("Error updating exam instance:", error);
-//     return res.status(500).json({ message: 'Server error' });
-//   }
-// });
 module.exports.updateExamInstance = asyncHandler(async (req, res) => {
   try {
     const studentId = req.student.toString();
@@ -130,7 +48,7 @@ module.exports.updateExamInstance = asyncHandler(async (req, res) => {
       completedSubjectId
     } = req.body;
 
-    console.log(`Updating exam for: ${candidateName}, Timer sent: ${timer}`);
+    // console.log(`Updating exam for: ${candidateName}, Timer sent: ${timer}`);
 
     // Find the existing exam instance for the student by profileCode
     let examInstance = await ExamInstances.findOne({ profileCode });
@@ -181,6 +99,7 @@ module.exports.updateExamInstance = asyncHandler(async (req, res) => {
               instanceQuestion.option_A = questionToUpdate.option_A || instanceQuestion.option_A;
               instanceQuestion.option_B = questionToUpdate.option_B || instanceQuestion.option_B;
               instanceQuestion.option_C = questionToUpdate.option_C || instanceQuestion.option_C;
+              instanceQuestion.option_D = questionToUpdate.option_D || instanceQuestion.option_D;
               instanceQuestion.answer = questionToUpdate.answer || instanceQuestion.answer;
               instanceQuestion.image = questionToUpdate.image ?? instanceQuestion.image;
               if (typeof questionToUpdate.isCorrect === 'boolean') {
@@ -206,11 +125,10 @@ module.exports.updateExamInstance = asyncHandler(async (req, res) => {
     return res.status(200).json({ message: 'Exam instance updated successfully' });
 
   } catch (error) {
-    console.error("Error updating exam instance:", error);
+    // console.error("Error updating exam instance:", error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
-
 
 
 // controller/studentController.js
@@ -322,7 +240,7 @@ module.exports.markQuestion = asyncHandler(async (req, res) => {
       markedResult: result._id
     });
   } catch (error) {
-    console.error('Error marking questions:', error);
+    // console.error('Error marking questions:', error);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -358,12 +276,13 @@ const handleIsBatched = asyncHandler(async (req, res, examInstance, studentId) =
      const  selectedOption = selKey;      // '' if skipped
      const correctAnswer =  corrKey;
 
-     console.log('Objetcs : :',questionId,questionText,selectedOption,correctAnswer);
+    //  console.log('Objetcs : :',questionId,questionText,selectedOption,correctAnswer);
       const keyToText = key => {
         switch (key) {
           case 'a': return q.option_A;
           case 'b': return q.option_B;
           case 'c': return q.option_C;
+          case 'd': return q.option_D;
           default:  return '';
         }
       };
@@ -376,6 +295,7 @@ const handleIsBatched = asyncHandler(async (req, res, examInstance, studentId) =
           A: q.option_A,
           B: q.option_B,
           C: q.option_C,
+          D: q.option_D,
         },
         selectedOption,       // '' if skipped
         correctAnswer,
@@ -538,7 +458,7 @@ const handleBatchedCompletion = async (
     });
 
   } catch (error) {
-    console.error('Error finalizing batched result:', error);
+    // console.error('Error finalizing batched result:', error);
     return res.status(500).json({
       message: 'Failed to finalize result due to server error',
       error: error.message

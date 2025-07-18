@@ -14,6 +14,7 @@ const scratchCardModel = require("../models/scratchCard");
 const adminModel = require("../models/admin");
 const profileCodeModel = require('../models/profileCode');
 const batchAwaitTimeModel = require('../models/batchAwaitTime');
+const numberOfQuestionPerSubjectModel = require('../models/numberOFQuestionPerSubject');
 
 
 //--------------------create--a--class-------------------------------------------------------
@@ -99,7 +100,7 @@ module.exports.createClass = asyncHandler(async (req, res) => {
     await newClass.save();
     res.status(200).json({ message: `${name2} class created successfully!` });
   } catch (error) {
-    console.error("Error creating class:", error);
+    // console.error("Error creating class:", error);
     res.status(500).send("Server error.");
   }
 });
@@ -164,7 +165,7 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
 
     res.status(200).json({ message: `${name} has been updated successfully!` });
   } catch (error) {
-    console.error('Update Error:', error);
+    // console.error('Update Error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -173,7 +174,7 @@ module.exports.updateClass = asyncHandler(async (req, res) => {
 module.exports.updateClassBatch = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, profileCodeInitials, subjects } = req.body;
-console.log("Object", req.body);
+// console.log("Object", req.body);
   try {
     // Validate class ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -225,7 +226,7 @@ console.log("Object", req.body);
 
     return res.status(200).json({ message: `${name} has been updated successfully!`, updatedClass });
   } catch (error) {
-    console.error("Batch update error:", error);
+    // console.error("Batch update error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -240,10 +241,10 @@ module.exports.generateUniqueProfileCode = asyncHandler(async (req, res) => {
     if (!prefix) return res.status(400).json({ message: "Missing prefix" });
 
     const profileCode = await generateUniqueProfileCode(prefix);
-    console.log("profileCode",profileCode);
+    // console.log("profileCode",profileCode);
     res.status(200).json({ profileCode });
   } catch (err) {
-    console.error(err);
+    // console.error(err);
     res.status(500).json({ message: "Failed to generate profile code" });
   }
 });
@@ -339,7 +340,7 @@ module.exports.deleteSubject = asyncHandler(async (req, res) => {
 
 //------------------------Questions---Section--------------------------------------------------
 module.exports.uploadQuestion = asyncHandler(async (req, res) => {
-  let { subjectId, question, optionA, optionB, optionC, answer } = req.body;
+  let { subjectId, question, optionA, optionB, optionC, optionD, answer } = req.body;
   // console.log(req.body)
   // Validate ObjectId
   if (!mongoose.Types.ObjectId.isValid(subjectId)) {
@@ -365,6 +366,7 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
     option_A: optionA,
     option_B: optionB,
     option_C: optionC,
+    option_D: optionD,
     answer: answer.trim().toLowerCase(),
   };
 
@@ -411,6 +413,7 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
     optionA: question.option_A,
     optionB: question.option_B,
     optionC: question.option_C,
+    optionD: question.option_D,
     answer: question.answer,
     image: `/uploads/${question.image}`,
     // image: `${req.protocol}://${req.get("host")}/uploads/${question.image}`,
@@ -418,7 +421,7 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
 
   const subjectName = subjectPlusWithImages[0].subjectName;
 
-  // console.log(findSubject);
+  // console.log(subjectPlusWithImages);
   // Respond with success message
   res.status(200).json({ questions:subjectPlusWithImages, subjectName });
 });
@@ -441,6 +444,7 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
         { option_A: searchRegex },
         { option_B: searchRegex },
         { option_C: searchRegex },
+        { option_D: searchRegex },
         { answer: searchRegex },
       ],
     };
@@ -461,6 +465,7 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
     optionA: question.option_A,
     optionB: question.option_B,
     optionC: question.option_C,
+    optionD: question.option_D,
     answer: question.answer,
     image: question.image ? `/uploads/${question.image}` : null,
     // image: question.image ? `${req.protocol}://${req.get("host")}/uploads/${question.image}` : null,
@@ -489,7 +494,7 @@ module.exports.deleteQuestion = asyncHandler(async (req, res) => {
 });
 
 module.exports.patchQuestion = asyncHandler(async (req, res) => {
-  const { subjectId, questionId, question, optionA, optionB, optionC, answer } =
+  const { subjectId, questionId, question, optionA, optionB, optionC, optionD, answer } =
     req.body;
 
   // console.log(req.body)
@@ -508,6 +513,7 @@ module.exports.patchQuestion = asyncHandler(async (req, res) => {
   questionD.option_A = optionA;
   questionD.option_B = optionB;
   questionD.option_C = optionC;
+  questionD.option_D = optionD;
   questionD.answer = answer;
 
   if (req.file && req.file.filename) {
@@ -576,7 +582,7 @@ module.exports.registerStudent = asyncHandler(async (req, res) => {
     new profileCodeModel({profileCode}).save();
     res.status(200).json({ message: `${saveCan.candidateName} has been registered successfully !!!` });
   } catch (error) {
-    console.error('Error registering student:', error);
+    // console.error('Error registering student:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -643,7 +649,7 @@ module.exports.sendResult = asyncHandler(async (req, res) => {
       });
 
   } catch (error) {
-      console.error('Error fetching results:', error);
+      // console.error('Error fetching results:', error);
       res.status(500).json({
           success: false,
           message: 'Failed to retrieve results'
@@ -871,9 +877,9 @@ module.exports.allHeaders = asyncHandler(async (req, res) => {
 
 module.exports.getBatchAwwaitTime = asyncHandler(async (req, res) => {
   try {
-    const batchTime = await batchAwaitTimeModel.findOne({set: true}).lean();
-    console.log(batchTime);
-    res.status(200).json({ data: batchTime });
+    const [batchTime, numOfQuest ]= await Promise.all( [batchAwaitTimeModel.findOne({set: true}).lean(), numberOfQuestionPerSubjectModel.findOne({})] ) 
+    // console.log(batchTime,numOfQuest);
+    res.status(200).json({ data: batchTime, numOfQuest });
   } catch (error) {
     console.error("Error fetching headers:", error);
     res.status(500).json({ data: "Server error" });
@@ -974,6 +980,7 @@ module.exports.changePassword = asyncHandler(async (req, res) => {
 
 
 module.exports.changeProfileImage = asyncHandler(async (req, res) => {
+  // console.log('got here')
   if (!req.file) {
     return res.status(400).json({ error: 'Invalid file input' });
   }
@@ -1026,6 +1033,26 @@ module.exports.changeBatchAwaitTime = asyncHandler(async (req, res) => {
   // console.log(batchAwaitTimeSave.batchAwaitTime);
 
   res.status(200).json({ message: 'Batch await time has been set to ', newName : batchAwaitTimeSave.batchAwaitTime});
+});
+
+module.exports.numberOfQuestionsPerSubjects = asyncHandler(async (req, res) => {
+  // return console.log(req.body);
+  if (!req.body.numberOfQuestionPerSubject) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
+
+  const  numOfQuest = await numberOfQuestionPerSubjectModel.findOne({})
+  if (!numOfQuest) {
+   const newBatch = await numberOfQuestionPerSubjectModel.create(req.body)
+    // return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
+    return res.status(200).json({ message: 'Number of question per subjects created for the first time', newNumQuest : newBatch.numberOfQuestionPerSubject});
+  }
+
+  numOfQuest.numberOfQuestionPerSubject = req.body.numberOfQuestionPerSubject; 
+  const numOfQuestSave = await numOfQuest.save();
+  // console.log(batchAwaitTimeSave.batchAwaitTime);
+
+  res.status(200).json({ message: 'Number of question is ', newNumQuest : numOfQuestSave.numberOfQuestionPerSubject});
 });
 
 //--------------delete candidates by class and result---------------------
