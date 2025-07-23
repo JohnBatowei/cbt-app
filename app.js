@@ -77,7 +77,7 @@ mongoose.set('strictQuery', true);
 mongoose.connect(uri)
   .then(() => {
     console.log(`Connected to MongoDB`);
-    app.listen(port, () => {
+    app.listen(port,host, () => {
       console.log(`AriTron CBT application listening on port ${port}. http://localhost:${port}`);
     });
   })
