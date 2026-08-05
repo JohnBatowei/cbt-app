@@ -225,7 +225,8 @@ module.exports.markQuestion = asyncHandler(async (req, res) => {
       candidateName,
       profileCode,
       totalScore,
-      subjects: markedSubjects
+      subjects: markedSubjects,
+      admin: req.studentAdminID
     });
 
     await Promise.all([

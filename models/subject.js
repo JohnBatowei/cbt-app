@@ -8,6 +8,7 @@ const subjectSchema = new mongoose.Schema(
       // unique: true,
     },
     questions: [{ type: mongoose.Schema.Types.ObjectId, ref: "question" }],
+    admin : { type: mongoose.Schema.Types.ObjectId, ref: "admine" },
   },
   { timestamps: true }
 );

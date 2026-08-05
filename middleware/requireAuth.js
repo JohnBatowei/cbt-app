@@ -27,7 +27,10 @@ const requireAuth = async (req,res,next)=>{
     try {
         const {id} = jwt.verify(token, process.env.SECRET)
         // console.log(id);
-        req.admin = await adminModel.findOne({_id:id}).select('_id')
+        // req.admin = await adminModel.findOne({_id:id}).select('_id')
+        req.adminModel = await adminModel.findOne({_id:id})
+        req.admin = req.adminModel._id
+        req.adminRole = req.adminModel.role
         // console.log(req.admin);
         next()
     } catch (error) {

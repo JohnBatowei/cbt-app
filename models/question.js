@@ -9,7 +9,8 @@ const questionSchema = new mongoose.Schema({
   option_C: { type: String },
   option_D: { type: String },
   answer: { type: String },
-  image: { type: String }
+  image: { type: String },
+  admin : { type: mongoose.Schema.Types.ObjectId, ref: "admine" },
 }, { timestamps: true });
 
 

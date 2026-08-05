@@ -64,7 +64,8 @@ const ResultSchema = new mongoose.Schema({
     date: {
         type: Date,
         default: Date.now
-    }
+    },
+    admin : { type: mongoose.Schema.Types.ObjectId, ref: "admine" }
 });
 
 module.exports.Result = mongoose.model('Result', ResultSchema);

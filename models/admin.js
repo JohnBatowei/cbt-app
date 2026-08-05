@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const bcrypt = require('bcrypt')
 // const jwt = require('jsonwebtoken')
 
+//3 level users, admin, user, trier
 // const {isEmail} = require('validator')
 const adminSchema = new mongoose.Schema(
   {
@@ -18,12 +19,20 @@ const adminSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true,'Please enter a password'],
+      // required: [true,'Please enter a password'],
     //   minlength: [6,'your password should be more than 6 characters']
     },
     image:{
       type: String, default: null,
-    }
+    },
+    role: {type: String, enum: ["admin", "user", "trier"], default : null},
+    subscription: { type: String, enum: ["one_year", "two_year", "six_month", "three_month", "one_month", "life"], default: null },
+    // subscription: { type : String, default : 'life'},
+    acctType: { type : String, default : 'owner'},
+    isSuspended: { type: Boolean, default: false },
+    subscriptionStart: { type: Date, default: null },
+    subscriptionEnd: { type: Date, default: null },
+    subscriptionActive: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -50,34 +59,11 @@ adminSchema.statics.login = async function(email, password){
 
   const admin = await this.findOne({email})
   // console.log(email, admin.email);
-  if(!admin){
-    // throw Error('incorrect Email')
-    return {error: 'incorrect Email'}
-  }
-  else{
-    const auth = await bcrypt.compare(password, admin.password)
-    if(auth){
-      // personal code cause of reactjs
-
-      // creating a token after signing up
-      // const accessToken = jwt.sign(
-      //   { 
-      //     "admInIfo": {
-      //       "adminId": admin._id,
-      //       "adminName": admin.name,
-      //       "adminEmail": admin.email
-      //     }
-      //   },
-      //   'AriTron cbt software.cbt',
-      //   { expiresIn: 24*60*60 }
-      // ) ;
-      // console.log(admin)
-      return admin
-      // return ({admin})
-    }else{
-      return {error:'incorrect Password'}
-    }
-  }
+  if(!admin) return {error: 'incorrect Email'};
+  const auth = await bcrypt.compare(password, admin.password)
+  if(!auth) return {error:'incorrect Password'}; 
+  return admin
+   
 }
 
 

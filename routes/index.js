@@ -31,35 +31,38 @@ router.get("/", (req, res) => {
 
 
 // create an admin route
-router.post("/",upload.single("file"), async (req, res) => {
+router.post("/", upload.single("file"), async (req, res) => {
   try {
-    // console.log(req.file.path);
-    const tEmail = req.body.email.toLowerCase()
+    const tEmail = req.body.email.toLowerCase();
     const findAdmin = await adminModel.findOne({ email: tEmail });
-    if (!findAdmin) { 
-      let form = new adminModel({  
-        name: req.body.name,
-        email: tEmail,
-        password: req.body.password,
-        image: req.file.filename
-      });
-      form.save().then(data => {
 
-        // let token = createToken(data._id)
-        // res.cookie('AriTron', token,{httpOnly:true, maxAge: '1d'})
-        res.status(200).json({ message: `${data.name} is now an admin` });
-
-      });
-    } else {
-      deleteUploadImage(req.file.filename);
-      res.status(400).json({ message: `${req.body.email} already exist` });
+    if (findAdmin) {
+      if (req.file) deleteUploadImage(req.file.filename);
+      return res.status(400).json({ message: `${req.body.email} already exists` });
     }
+
+    const form = new adminModel({
+      name: req.body.name,
+      email: tEmail,
+      password: req.body.password,
+      image: req.file?.filename || null,
+      role: "admin",
+      subscription: "life",
+      acctType: "owner",
+      isSuspended: false,
+      subscriptionStart: null,
+      subscriptionEnd: null,
+      subscriptionActive: false,
+    });
+
+    const data = await form.save();
+    res.status(200).json({ message: `${data.name} is now an admin` });
   } catch (error) {
-    // console.log(error);
-  //  let err = handleError(error)
-   res.status(400).json({message: error})
+    if (req.file) deleteUploadImage(req.file.filename);
+    res.status(400).json({ message: error.message });
   }
 });
+
 
 
 // verify admin logins
@@ -69,9 +72,12 @@ router.post("/verify", async (req, res, next) => {
     // return console.log(req.body)
     const tEmail = email.toLowerCase()
     const admin = await adminModel.login(tEmail,password)
-
+    // console.log(admin)
     if(admin.error){
       return res.status(404).json({message : admin.error})
+    }
+    if(admin.isSuspended == true){
+      return res.status(400).json({message : 'Account deactivated'})
     }
     // let token = createToken(admin._id)
     const token = jwt.sign({ id: admin._id }, process.env.SECRET, { expiresIn: '3d' });
@@ -88,7 +94,7 @@ router.post("/verify", async (req, res, next) => {
 
     // console.log('Cookie sent:', res.get('Set-Cookie'));
       // console.log('cookie :', req.cookies)
-    res.status(200).json({name: admin.name,email , image });
+    res.status(200).json({name: admin.name,email , image, role: admin.role, subscription: admin.subscription });
   
   } catch (error) {
     console.log(error);
@@ -190,7 +196,7 @@ const getSubjectStatus = getListSubject.map(D => ({
     //-----------------------------------------------------------------------
         // Wait interval logic
         try {
-          const batchConfig = await batchAwaitTimeModel.findOne();
+          const batchConfig = await batchAwaitTimeModel.findOne({admin: candidate?.admin});
           const awaitTimeInMinutes = batchConfig?.batchAwaitTime || 15;
     
           const completedTimes = examInstnc.completedSubjectTimes || [];
@@ -346,13 +352,14 @@ router.post('/verify-login', async (req, res) => {
     const { profileCode } = req.body;
     if (!profileCode) return res.status(400).json({ error: 'You did not enter a profile code' });
 
-    const [candidate, examInstnc, numOfQuestions] = await Promise.all([
-      studentModel.findOne({ profileCode }).populate({
+    const candidate = await studentModel.findOne({ profileCode }).populate({
         path: 'subject',
         populate: { path: 'questions' }
-      }),
+      })
+
+    const [ examInstnc, numOfQuestions] = await Promise.all([
       ExamInstances.findOne({ profileCode }),
-      numberOfQuestionPerSubjectModel.findOne({})
+      numberOfQuestionPerSubjectModel.findOne({ admin: candidate?.admin })
     ]);
 
     if (!candidate) return res.status(400).json({ error: 'You are not authorized for an exam' });

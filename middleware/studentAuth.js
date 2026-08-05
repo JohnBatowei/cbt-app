@@ -10,7 +10,11 @@ const studentAuth = async (req, res, next) => {
   
     try {
       const decoded = jwt.verify(token, process.env.SECRET);
-      req.student = await studentModel.findOne({ _id: decoded.id }).select('_id');
+      // req.student = await studentModel.findOne({ _id: decoded.id }).select('_id');
+      student = await studentModel.findOne({ _id: decoded.id })
+      req.student =  student._id
+      req.studentAdminID = student.admin
+      console.log(req.studentAdminID)
       if (!req.student) {
         return res.status(401).json({ message: 'Student not found' });
       }

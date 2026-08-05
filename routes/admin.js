@@ -33,6 +33,10 @@ const {
   changeBatchAwaitTime,
   getBatchAwwaitTime,
   numberOfQuestionsPerSubjects,
+  createUser,
+  getUser,
+  updateUser,
+  updateUserStatus,
 } = require("../controllers/admin");
 
 const requireAuth = require("../middleware/requireAuth");
@@ -53,6 +57,12 @@ router.patch("/update-class/:id", updateClass);
 router.post("/create-batched-class", createClass);
 router.patch("/update-class/:id/batch", updateClassBatch);
 
+
+// ---------------------Users--------------------------------------------
+router.post("/create-user", createUser);
+router.get("/get-user", getUser);
+router.put("/update-user-profile/:id", updateUser);
+router.put("/users/:id/status", updateUserStatus);
 
 // ---------------------Subject--------------------------------------------
 router.post("/create-subject", createSubject);

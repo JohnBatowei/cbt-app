@@ -11,6 +11,7 @@ const studentSchema = new mongoose.Schema(
     subject: [{ type: mongoose.Schema.Types.ObjectId, ref: "subject" }],
     phone: {type: String},
     endExam: { type: Boolean, default: false },
+    admin : { type: mongoose.Schema.Types.ObjectId, ref: "admine" },
   },
   { timestamps: true }
 );

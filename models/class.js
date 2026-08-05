@@ -48,6 +48,8 @@ const ClassSchema = new mongoose.Schema(
     ],
 
     profileCodeInitials: { type: String },
+
+    admin : { type: mongoose.Schema.Types.ObjectId, ref: "admine" },
   },
   { timestamps: true }
 );

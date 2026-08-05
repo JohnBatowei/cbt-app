@@ -1,3 +1,4 @@
+const sendEmail = require("../utils/sendEmail");
 const generateUniqueProfileCode = require('../helpers/profileCodeGenerator');
 const asyncHandler = require("express-async-handler");
 const classModel = require("../models/class");
@@ -18,44 +19,6 @@ const numberOfQuestionPerSubjectModel = require('../models/numberOFQuestionPerSu
 
 
 //--------------------create--a--class-------------------------------------------------------
-// module.exports.createClass = asyncHandler(async (req, res) => {
-//   const { name, timer, subjects, profileCodeInitials } = req.body;
-
-//   // return console.log(subjects)
-//   // Validate required fields
-//   if (!name || !timer || !Array.isArray(subjects) || !profileCodeInitials) {
-//     return res.status(400).json({ message: "Invalid input data." });
-//   }
-//   try {
-//     const name2 = name
-//     const profileCodeInitialsUppercase = profileCodeInitials.toUpperCase()
-//     const findClasss = await classModel.findOne({ name: name2 });
-
-//     if (findClasss) {
-//       return res.status(400).json({ message: `${name2} already exist` });
-//     }
-
-//     // Fetch subject IDs
-//     const subjectQueries = subjects.map((subjectId) =>
-//       subjectModel.findOne({ _id: subjectId }).lean()
-//     );
-//     const questionIds = await Promise.all(subjectQueries);
-
-//     // return console.log(subjects,questionsIds)
-//     const newClass = new classModel({
-//       name: name2,
-//       timer,
-//       subject: questionIds, // Assuming `subjects` are valid ObjectId references
-//       profileCodeInitials: profileCodeInitialsUppercase,
-//     });
-
-//     await newClass.save();
-//     res.status(200).json({ message: `${name} class created successfully !!!` });
-//   } catch (error) {
-//     console.error("Error creating class:", error);
-//     res.status(500).send("Server error.");
-//   }
-// });
 module.exports.createClass = asyncHandler(async (req, res) => {
   const { name, timer, subjects, profileCodeInitials, isBatched, subjectTimers } = req.body;
 
@@ -90,11 +53,12 @@ module.exports.createClass = asyncHandler(async (req, res) => {
     
     const newClass = new classModel({
       name: name2,
+      isBatched: !!isBatched,
       timer: timer || "0", // if not batched, timer is required
       subject: fetchedSubjects,
-      profileCodeInitials: profileCodeInitialsUppercase,
-      isBatched: !!isBatched,
       subjectTimers: isBatched ? subjectTimers : [],
+      profileCodeInitials: profileCodeInitialsUppercase,
+      admin: req.admin
     });
 
     await newClass.save();
@@ -107,23 +71,35 @@ module.exports.createClass = asyncHandler(async (req, res) => {
 
 
 module.exports.deleteClass = asyncHandler(async (req, res) => {
-  const id = req.params.id;
-  // console.log(id);
+  const { id } = req.params;
 
-  if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-
-    const result = await classModel.findByIdAndDelete(req.params.id);
-
-    if (result) {
-      await studentModel.deleteMany({classId : result._id})
-      res.status(200).json({ message: `${result.name} deleted alongside students of the class successfully !!!` });
-    } else {
-      res.status(404).json({ message: "Class not found" });
-    }
-  } else {
-    res.status(404).json({ message: "Invalid ID" });
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid ID" });
   }
+
+  let deleteQuery = { _id: id };
+
+  // Non-super admins can only delete their own classes
+  if (req.adminRole !== "admin") {
+    deleteQuery.admin = req.admin;
+  }
+
+  const result = await classModel.findOneAndDelete(deleteQuery);
+
+  if (!result) {
+    return res.status(404).json({
+      message: "Class not found or not authorized",
+    });
+  }
+
+  await studentModel.deleteMany({ classId: result._id });
+
+  res.status(200).json({
+    message: `${result.name} deleted alongside its students successfully`,
+  });
 });
+
+
 
 
 module.exports.updateClass = asyncHandler(async (req, res) => {
@@ -251,6 +227,190 @@ module.exports.generateUniqueProfileCode = asyncHandler(async (req, res) => {
 
 
 // ------------------------------Subject---Section-----------------------------------------
+module.exports.createUser = asyncHandler(async (req, res) => {
+  
+  const {fullname, acctType, subType, password, cPassword, role, email} = req.body.data
+if(!fullname || !acctType || !subType || !password || !cPassword || !role || !email) return res.status(404).json({ error: "fields cannot be empty" });
+if(password !== cPassword ) return res.status(404).json({ error: "Passwords dont match" });
+  // return
+  const findUser = await adminModel.findOne({ email});
+  if (findUser) {
+    return res.status(200).json({ message: `Oops ${email} already exists` });
+  }
+
+  const startDate = new Date();
+  let endDate = new Date(startDate);
+
+  switch (subType) {
+    case "one_year":
+      endDate.setFullYear(startDate.getFullYear() + 1);
+      break;
+    case "two_year":
+      endDate.setFullYear(startDate.getFullYear() + 2);
+      break;
+    case "six_month":
+      endDate.setMonth(startDate.getMonth() + 6);
+      break;
+    case "three_month":
+      endDate.setMonth(startDate.getMonth() + 3);
+      break;
+    case "one_month":
+      endDate.setMonth(startDate.getMonth() + 1);
+      break;
+    default:
+      return res.status(400).json({ error: "Invalid subscription type" });
+  }
+  // Create a new subject
+  const create = await adminModel.create({
+    name: fullname,
+    email,
+    password,
+    image: null,
+    role,
+    subscription: subType,
+    acctType,
+    isSuspended: false,
+    subscriptionStart: startDate,
+    subscriptionEnd: endDate,
+    subscriptionActive: true
+  });
+  if (!create) {
+    return res.json({ message: "Error creating user" });
+  }
+  res.json({ message: `${fullname} has been created` });
+    // 📨 Send confirmation email
+     sendEmail(
+      email,
+      "Profile created Successfully",
+      `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; background-color:#f9f9f9; border-radius:8px;">
+          <h2 style="color:#0052cc;">Hello ${create.name},</h2>
+          <p>Your profile has been created successfully. Below are your details:</p>
+          <table style="border-collapse: collapse; width: 100%; max-width: 400px;">
+            <tr><td><b>Email:</b></td><td>${create.email}</td></tr>
+            <tr><td><b>Account Type:</b></td><td>${create.acctType}</td></tr>
+            <tr><td><b>Subscription Type:</b></td><td>${create.subscription}</td></tr>
+            <tr><td><b>Role:</b></td><td>${create.role}</td></tr>
+            <tr><td><b>Temp Password:</b></td><td>${password}</td></tr>
+          </table>
+          <br/>
+          <p>If you did not request this change, please contact our support team immediately.</p>
+          <p>— <b>AriTron LTD Support Team</b></p>
+        </div>
+      `
+    );
+
+  // Respond with success message
+});
+
+module.exports.getUser = asyncHandler(async (req, res) => {
+  const findUser = await adminModel.find({role: { $in: ["user", "trier"] }}).sort({ createdAt: -1 }).lean()
+  console.log(findUser)
+  if(findUser) return   res.status(200).json({ message: findUser});
+});
+
+module.exports.updateUserStatus = asyncHandler(async (req, res) => {
+  const id = req.params.id
+
+  const findUser = await adminModel.findOne({_id:id})
+  // console.log(id,findUser)
+  if(!findUser){
+    return res.status(404).json({error : 'User not found'})
+  }
+  findUser.isSuspended = !findUser.isSuspended
+ const saveUser =  await findUser.save()
+  console.log(saveUser)
+ return   res.status(200).json({ message: findUser});
+});
+
+module.exports.updateUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await adminModel.findById(id);
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const { subType, password } = req.body;
+
+  // 🧩 Update allowed fields (excluding _id)
+  Object.keys(req.body).forEach((key) => {
+    if (req.body[key] !== undefined && key !== "_id") {
+      user[key] = req.body[key];
+    }
+  });
+
+  // ⚙️ Handle subscription renewal
+  if (subType) {
+    const now = new Date();
+    const currentEnd = new Date(user.subscriptionEnd);
+    const startDate = now > currentEnd ? now : currentEnd; // continue from expiry if still active
+    let endDate = new Date(startDate);
+
+    switch (subType) {
+      case "one_year":
+        endDate.setFullYear(startDate.getFullYear() + 1);
+        break;
+      case "two_year":
+        endDate.setFullYear(startDate.getFullYear() + 2);
+        break;
+      case "six_month":
+        endDate.setMonth(startDate.getMonth() + 6);
+        break;
+      case "three_month":
+        endDate.setMonth(startDate.getMonth() + 3);
+        break;
+      case "one_month":
+        endDate.setMonth(startDate.getMonth() + 1);
+        break;
+      default:
+        return res.status(400).json({ error: "Invalid subscription type" });
+    }
+
+    user.subscriptionStart = now;
+    user.subscriptionEnd = endDate;
+    user.subscriptionActive = true; // re-enable access
+    user.isSuspended = false;
+  }
+
+  // 🧠 Only hash password if user explicitly changed it
+  if (!password) {
+    user.password = user.password; // keep existing password untouched
+  }
+
+  // 💾 Save user
+  const updatedUser = await user.save();
+
+  // 📩 Send notification email (no password mention)
+  await sendEmail(
+    updatedUser.email,
+    "Profile Updated Successfully",
+    `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; background-color:#f9f9f9; border-radius:8px;">
+        <h2 style="color:#0052cc;">Hello ${updatedUser.name},</h2>
+        <p>Your profile has been updated successfully.</p>
+        <table style="border-collapse: collapse; width: 100%; max-width: 400px;">
+          <tr><td><b>Email:</b></td><td>${updatedUser.email}</td></tr>
+          <tr><td><b>Account Type:</b></td><td>${updatedUser.acctType}</td></tr>
+          <tr><td><b>Subscription Type:</b></td><td>${updatedUser.subscription}</td></tr>
+          <tr><td><b>Subscription Ends:</b></td><td>${updatedUser.subscriptionEnd.toDateString()}</td></tr>
+          <tr><td><b>Role:</b></td><td>${updatedUser.role}</td></tr>
+        </table>
+        <br/>
+        <p>If you did not request this change, please contact our support team immediately.</p>
+        <p>— <b>AriTron LTD Support Team</b></p>
+      </div>
+    `
+  );
+
+  res.status(200).json({
+    message: "User profile updated successfully",
+    updatedUser,
+  });
+});
+
+
+
+
+// ------------------------------Subject---Section-----------------------------------------
 module.exports.createSubject = asyncHandler(async (req, res) => {
   // console.log(req.body.subjectName);
   // Check if the subject already exists
@@ -262,7 +422,7 @@ module.exports.createSubject = asyncHandler(async (req, res) => {
   }
 
   // Create a new subject
-  const create = await subjectModel.create({ name: req.body.subjectName });
+  const create = await subjectModel.create({ name: req.body.subjectName, admin: req.admin });
   if (!create) {
     return res.json({ message: "Error creating subject" });
   }
@@ -273,30 +433,58 @@ module.exports.createSubject = asyncHandler(async (req, res) => {
 
 module.exports.getSubjects = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, searchTerm = "" } = req.query;
-
-  let query = {};
-
-  if (searchTerm.trim() !== "") {
-    query = {
-      $or: [
-        { candidateName: { $regex: searchTerm, $options: "i" } },
-        { className: { $regex: searchTerm, $options: "i" } },
-        { timer: { $regex: searchTerm, $options: "i" } },
-        { profileCode: { $regex: searchTerm, $options: "i" } }
-      ]
-    };
-  }
-
   const skip = (page - 1) * limit;
 
-  const [classes, findSubject, findCandidates, findCandidatesDocsCount] = await Promise.all([
-    classModel.find().sort({ createdAt: -1 }).populate({ path: "subject" }).exec(),
-    subjectModel.find().sort({ createdAt: -1 }).lean(),
-    studentModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
-    studentModel.countDocuments(query)
+  let studentQuery = {};
+  let subjectQuery = {};
+  let classQuery = {};
+
+  /* ---------------- SEARCH ---------------- */
+  if (searchTerm.trim()) {
+    studentQuery.$or = [
+      { candidateName: { $regex: searchTerm, $options: "i" } },
+      { className: { $regex: searchTerm, $options: "i" } },
+      { timer: { $regex: searchTerm, $options: "i" } },
+      { profileCode: { $regex: searchTerm, $options: "i" } },
+    ];
+  }
+
+  /* ---------------- ACCESS CONTROL ---------------- */
+  if (req.adminRole !== "admin") {
+    // find super admin(s)
+    const superAdmins = await adminModel
+      .find({ role: "admin" })
+      .select("_id")
+      .lean();
+
+    const superAdminIds = superAdmins.map(a => a._id);
+
+    subjectQuery = {
+      $or: [
+        { admin: { $in: superAdminIds } }, // global subjects
+        { admin: req.admin._id },           // own subjects
+      ],
+    };
+
+    classQuery = { admin: req.admin._id };
+    studentQuery.admin = req.admin._id;
+  }
+
+  /* ---------------- DB CALLS ---------------- */
+  const [classes,findSubject,findCandidates,findCandidatesDocsCount] = await Promise.all([
+    classModel.find(classQuery).sort({ createdAt: -1 }).populate({ path: "subject" }).lean(),
+    subjectModel.find(subjectQuery).sort({ createdAt: -1 }).lean(),
+    studentModel.find(studentQuery).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    studentModel.countDocuments(studentQuery)
   ]);
 
-  res.status(200).json({ message: findSubject, classes, findCandidates, findCandidatesDocsCount });
+  /* ---------------- RESPONSE (UNCHANGED) ---------------- */
+  res.status(200).json({
+    message: findSubject,
+    classes,
+    findCandidates,
+    findCandidatesDocsCount
+  });
 });
 
 
@@ -304,44 +492,127 @@ module.exports.getSubjects = asyncHandler(async (req, res) => {
 module.exports.deleteSubject = asyncHandler(async (req, res) => {
   const subjectId = req.params.del;
 
-  // Validate ObjectId
   if (!mongoose.Types.ObjectId.isValid(subjectId)) {
     return res.status(400).json({ message: "Invalid subject ID" });
   }
 
-  // Find and delete all questions associated with the subject
-  const questions = await questionModel.find({ subjectId: subjectId }).lean();
+  const isSuperAdmin = req.adminRole === "admin";
+
+  // 🔍 Build dynamic query
+  const subjectQuery = isSuperAdmin
+    ? { _id: subjectId }
+    : { _id: subjectId, admin: req.admin };
+
+  const subject = await subjectModel.findOne(subjectQuery);
+
+  if (!subject) {
+    return res.status(404).json({
+      message: "Subject not found or not authorized",
+    });
+  }
+
+  // 🔍 Question query
+  const questionQuery = isSuperAdmin
+    ? { subjectId }
+    : { subjectId, admin: req.admin };
+
+  const questions = await questionModel.find(questionQuery).lean();
+
+  // 🧹 Delete images
   for (const question of questions) {
     if (question.image) {
-      // Delete the image associated with the question
       deleteUploadImage(question.image);
     }
   }
 
-  // Delete all questions
-  await questionModel.deleteMany({ subjectId: subjectId });
+  //  Delete questions
+  await questionModel.deleteMany(questionQuery);
 
-  // Find and delete the subject
-  const deletedSubject = await subjectModel
-    .findOneAndDelete({ _id: subjectId })
-    .lean();
+  //  Delete subject
+  await subjectModel.deleteOne({ _id: subjectId });
 
-  if (!deletedSubject) {
-    return res.status(404).json({ message: "Subject not found" });
-  }
+  // Remove subject references from classes
+  const classQuery = isSuperAdmin ? {} : { admin: req.admin };
 
-  // Respond with success message
-  res.json({ message: deletedSubject.name + " deleted successfully." });
+  await classModel.updateMany(classQuery, {
+    $pull: {
+      subject: subjectId,
+      subjectTimers: { subjectId },
+    },
+  });
+
+  res.status(200).json({
+    message: `${subject.name} deleted successfully.`,
+  });
 });
+
 
 //----------------------------------End of Subject------------------------------------------
 
 
 
 //------------------------Questions---Section--------------------------------------------------
+// module.exports.uploadQuestion = asyncHandler(async (req, res) => {
+//   let { subjectId, question, optionA, optionB, optionC, optionD, answer } = req.body;
+//   // console.log(req.body)
+//   // Validate ObjectId
+//   if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+//     return res.status(400).json({ message: "Not a valid id" });
+//   }
+
+//   // Find the subject
+//   const findSubject = await subjectModel.findOne({ _id: subjectId });
+//   if (!findSubject) {
+//     if (req.file && req.file.filename) {
+//       deleteUploadImage(req.file.filename);
+//     }
+//     return res.status(404).json({ message: "Unable to find subject" });
+//   }
+
+//     // Sanitize the question field before saving
+//     question = sanitizeHtml(question);
+//   // Prepare question object
+//   const questionData = {
+//     subjectName: findSubject.name,
+//     subjectId,
+//     question, // Consistent field name
+//     option_A: optionA,
+//     option_B: optionB,
+//     option_C: optionC,
+//     option_D: optionD,
+//     answer: answer.trim().toLowerCase(),
+//     admin: req.admin
+//   };
+
+//   // Add file information if provided
+//   if (req.file && req.file.filename) {
+//     questionData.image = req.file.filename;
+//   }
+
+//   // Create and save the question
+//   const quest = new questionModel(questionData);
+
+//   try {
+//     const saveQuestion = await quest.save();
+
+//     //save question id to subject aswell
+//     findSubject.questions.push(saveQuestion._id);
+//     await findSubject.save();
+//     res
+//       .status(200)
+//       .json({
+//         message: "Your question has been added to " + saveQuestion.subjectName,
+//       });
+//   } catch (error) {
+//     if (req.file && req.file.filename) {
+//       deleteUploadImage(req.file.filename);
+//     }
+//     res.status(500).json({ message: "Server error" });
+//   }
+// });
 module.exports.uploadQuestion = asyncHandler(async (req, res) => {
   let { subjectId, question, optionA, optionB, optionC, optionD, answer } = req.body;
-  // console.log(req.body)
+
   // Validate ObjectId
   if (!mongoose.Types.ObjectId.isValid(subjectId)) {
     return res.status(400).json({ message: "Not a valid id" });
@@ -356,8 +627,20 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Unable to find subject" });
   }
 
-    // Sanitize the question field before saving
-    question = sanitizeHtml(question);
+  // ---------------- ACCESS CONTROL ----------------
+  // Only superAdmin or the admin who created the subject can add questions
+  if (req.adminRole !== "admin" && !findSubject.admin.equals(req.admin._id)) {
+    if (req.file && req.file.filename) {
+      deleteUploadImage(req.file.filename);
+    }
+    return res.status(403).json({
+      message: "You are not authorized to add questions to this subject",
+    });
+  }
+
+  // Sanitize the question field before saving
+  question = sanitizeHtml(question);
+
   // Prepare question object
   const questionData = {
     subjectName: findSubject.name,
@@ -368,6 +651,7 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
     option_C: optionC,
     option_D: optionD,
     answer: answer.trim().toLowerCase(),
+    admin: req.admin,
   };
 
   // Add file information if provided
@@ -381,14 +665,13 @@ module.exports.uploadQuestion = asyncHandler(async (req, res) => {
   try {
     const saveQuestion = await quest.save();
 
-    //save question id to subject aswell
+    // Save question id to subject as well
     findSubject.questions.push(saveQuestion._id);
     await findSubject.save();
-    res
-      .status(200)
-      .json({
-        message: "Your question has been added to " + saveQuestion.subjectName,
-      });
+
+    res.status(200).json({
+      message: "Your question has been added to " + saveQuestion.subjectName,
+    });
   } catch (error) {
     if (req.file && req.file.filename) {
       deleteUploadImage(req.file.filename);
@@ -427,6 +710,7 @@ module.exports.getSubjectQuestions = asyncHandler(async (req, res) => {
 });
 
 
+
 module.exports.getAllQuestions = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -434,10 +718,11 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
 
   const search = req.query.search || "";
 
-  let query = {};
+  // ------------------ SEARCH ------------------
+  let searchQuery = {};
   if (search.trim()) {
     const searchRegex = new RegExp(search, "i"); // case-insensitive
-    query = {
+    searchQuery = {
       $or: [
         { subjectName: searchRegex },
         { question: searchRegex },
@@ -450,9 +735,35 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
     };
   }
 
-  const total = await questionModel.countDocuments(query);
+  // ------------------ ACCESS CONTROL ------------------
+  let ownershipQuery = {};
+  if (req.adminRole !== "admin") {
+    // Non-super admin: include only their own questions + super admin questions
+    const superAdmins = await adminModel.find({ role: "admin" }).select("_id").lean();
+    const superAdminIds = superAdmins.map(a => a._id);
 
-  const questionsdb = await questionModel.find(query)
+    ownershipQuery = {
+      $or: [
+        { admin: req.admin._id },          // their own questions
+        { admin: { $in: superAdminIds } }, // super admin questions
+      ],
+    };
+  }
+  // Super admin sees everything → ownershipQuery stays empty
+
+  // Merge search + ownership conditions
+  let finalQuery = {};
+  if (Object.keys(searchQuery).length && Object.keys(ownershipQuery).length) {
+    finalQuery = { $and: [searchQuery, ownershipQuery] };
+  } else if (Object.keys(searchQuery).length) {
+    finalQuery = searchQuery;
+  } else if (Object.keys(ownershipQuery).length) {
+    finalQuery = ownershipQuery;
+  }
+
+  const total = await questionModel.countDocuments(finalQuery);
+
+  const questionsdb = await questionModel.find(finalQuery)
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);
@@ -468,7 +779,6 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
     optionD: question.option_D,
     answer: question.answer,
     image: question.image ? `/uploads/${question.image}` : null,
-    // image: question.image ? `${req.protocol}://${req.get("host")}/uploads/${question.image}` : null,
   }));
 
   res.status(200).json({
@@ -480,42 +790,63 @@ module.exports.getAllQuestions = asyncHandler(async (req, res) => {
 
 
 module.exports.deleteQuestion = asyncHandler(async (req, res) => {
-  // const subjectId = req.params.subjectId
-  const questionId = req.params.questionId;
-  // console.log('got it')
-  // console.log(req.params)
-  const question = await questionModel.findByIdAndDelete({ _id: questionId });
-  if (!question) {
-    return res.status(500).json({ message: `Unable to delete question` });
+  const { questionId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(questionId)) {
+    return res.status(400).json({ message: "Invalid question ID" });
   }
+
+  let deleteQuery = { _id: questionId };
+
+  // Non-super admins can only delete their own questions
+  if (req.adminRole !== "admin") {
+    deleteQuery.admin = req.admin;
+  }
+
+  const question = await questionModel.findOneAndDelete(deleteQuery);
+
+  if (!question) {
+    return res.status(404).json({
+      message: "Question not found or not authorized",
+    });
+  }
+
   deleteUploadImage(question.image);
 
-  res.status(200).json({ message: `Question delete successfully` });
+  res.status(200).json({
+    message: "Question delete successfully",
+  });
 });
 
-module.exports.patchQuestion = asyncHandler(async (req, res) => {
-  const { subjectId, questionId, question, optionA, optionB, optionC, optionD, answer } =
-    req.body;
 
-  // console.log(req.body)
+module.exports.patchQuestion = asyncHandler(async (req, res) => {
+  const { subjectId, questionId, question, optionA, optionB, optionC, optionD, answer } = req.body;
+
   if (!mongoose.Types.ObjectId.isValid(questionId)) {
     return res.status(400).json({ message: "Not a valid id" });
   }
 
-  const questionD = await questionModel.findById({ _id: questionId });
-  if (!questionD) {
-    return res.status(500).json({ message: "Unable to find document" });
+  // Build query: super admin can update any question, others only their own
+  let query = { _id: questionId };
+  if (req.adminRole !== "admin") {
+    query.admin = req.admin; // ownership enforced
   }
 
-  let questions = sanitizeHtml(question);
-  
-  questionD.question = questions;
+  const questionD = await questionModel.findOne(query);
+  if (!questionD) {
+    return res.status(404).json({ message: "Question not found or not authorized" });
+  }
+
+  // Sanitize and update fields
+  const sanitizedQuestion = sanitizeHtml(question);
+  questionD.question = sanitizedQuestion;
   questionD.option_A = optionA;
   questionD.option_B = optionB;
   questionD.option_C = optionC;
   questionD.option_D = optionD;
-  questionD.answer = answer;
+  questionD.answer = answer.toLowerCase();
 
+  // Update image if provided
   if (req.file && req.file.filename) {
     deleteUploadImage(questionD.image);
     questionD.image = req.file.filename;
@@ -528,6 +859,7 @@ module.exports.patchQuestion = asyncHandler(async (req, res) => {
 
   res.status(200).json({ message: `Question updated successfully!!!` });
 });
+
 //-----------------------End of Question Section---------------------------------------------------
 
 
@@ -575,6 +907,7 @@ module.exports.registerStudent = asyncHandler(async (req, res) => {
       profileCode,
       phone: phoneNumber,
       subject: JSON.parse(subjects), // Parse subjects to array of ObjectIds
+      admin: req.admin
     });
 
     // Save the student to the database
@@ -625,38 +958,74 @@ module.exports.deleteStudent = asyncHandler(async (req, res) => {
 
 // ---------------------Send  results -----------------------------------------------------------------
 
+// module.exports.sendResult = asyncHandler(async (req, res) => {
+//   try {
+//       // Fetch all results
+//       const results = await Result.find({})
+
+//       // Organize results by className
+//       const resultsByClass = {};
+
+//       results.forEach(result => {
+//           const className = result.className;
+//           if (!resultsByClass[className]) {
+//               resultsByClass[className] = [];
+//           }
+//           resultsByClass[className].push(result);
+//       });
+
+//       // Send organized results to the browser
+//       res.status(200).json({
+//           success: true,
+//           data: resultsByClass
+//       });
+
+//   } catch (error) {
+//       // console.error('Error fetching results:', error);
+//       res.status(500).json({
+//           success: false,
+//           message: 'Failed to retrieve results'
+//       });
+//   }
+// });
+
 module.exports.sendResult = asyncHandler(async (req, res) => {
   try {
-      // Fetch all results
-      const results = await Result.find({})
-      // const results = await Result.find({}).populate('studentId').populate('classId').populate('subjects.subjectId');
+    let query = {};
 
-      // Organize results by className
-      const resultsByClass = {};
+    //  Role-based access
+    if (req.adminRole !== "admin") {
+      // normal admin → only their own results
+      query.admin = req.admin;
+    }
 
-      results.forEach(result => {
-          const className = result.className;
-          if (!resultsByClass[className]) {
-              resultsByClass[className] = [];
-          }
-          resultsByClass[className].push(result);
-      });
+    // Fetch results based on role
+    const results = await Result.find(query).lean();
 
-      // Send organized results to the browser
-      res.status(200).json({
-          success: true,
-          data: resultsByClass
-      });
+    // Organize results by className
+    const resultsByClass = {};
+
+    results.forEach(result => {
+      const className = result.className;
+      if (!resultsByClass[className]) {
+        resultsByClass[className] = [];
+      }
+      resultsByClass[className].push(result);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: resultsByClass
+    });
 
   } catch (error) {
-      // console.error('Error fetching results:', error);
-      res.status(500).json({
-          success: false,
-          message: 'Failed to retrieve results'
-      });
+    console.error("Error fetching results:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve results"
+    });
   }
 });
-
 
 // ---------------------End Send  results -------------------------------------------------------
 module.exports.sendClassResult = asyncHandler(async (req, res) => {
@@ -671,6 +1040,13 @@ module.exports.sendClassResult = asyncHandler(async (req, res) => {
           { 'subjects.subjectName': { $regex: search, $options: 'i' } }
       ]
   };
+
+    //role base
+  if (req.adminRole !== "admin") {
+
+    query.admin = req.admin;
+
+  }
 
   try {
       const totalCount = await Result.countDocuments(query);
@@ -702,6 +1078,10 @@ module.exports.exportClassResultExcelDownload = asyncHandler( async (req, res) =
             { 'subjects.subjectName': { $regex: search, $options: 'i' } }
         ]
     };
+
+    if (req.adminRole !== "admin") {
+      query.admin = req.admin;
+    }
 
     try {
         const results = await Result.find(query);
@@ -763,6 +1143,9 @@ module.exports.sendClassRegisteredCans = asyncHandler(async (req, res) => {
       ]
     };
 
+  if (req.adminRole !== "admin") {
+    query.admin = req.admin;
+  }
     const total = await studentModel.countDocuments(query);
 
     const results = await studentModel.find(query)
@@ -787,8 +1170,18 @@ module.exports.sendClassRegisteredCans = asyncHandler(async (req, res) => {
 module.exports.downloadClassExcel = asyncHandler(async (req, res) => {
   try {
  const classId = req.params.id;
+   //Create query
+    const query = {
+      classId: classId
+    };
+    //  Apply role filter
+    if (req.adminRole !== "admin") {
+      query.admin = req.admin;
+    }
+    // Use query
+    const students = await studentModel.find(query).populate('subject');
 // console.log('downloaded');
-  const students = await studentModel.find({ classId }).populate('subject');
+  // const students = await studentModel.find({ classId }).populate('subject');
 
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Class Candidates');
@@ -831,7 +1224,8 @@ module.exports.changeHeaders = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
     const { body } = req.body;
-        console.log(body)
+        // console.log(body)
+    if(req.adminRole !== 'admin') return res.status(400).json({data: "Header update not allowed at the moment"});
     if (!body || !id) {
       return res.status(400).json({ data: "Client errors" });
     }
@@ -839,14 +1233,19 @@ module.exports.changeHeaders = asyncHandler(async (req, res) => {
     const headerUpdate = {};
     if (id === "f") {
       headerUpdate.frontPage = body;
+      headerUpdate.admin = req.admin
     } else if (id === "coo") {
       headerUpdate.corPage = body;
+      headerUpdate.admin = req.admin
     } else if (id === "can") {
       headerUpdate.canPage = body;
+      headerUpdate.admin = req.admin
     } else if(id === "confirmation"){
       headerUpdate.confirmation = body.toLowerCase();
+      headerUpdate.admin = req.admin
     }else if (id === "result") {
       headerUpdate.resultPage = body;
+      headerUpdate.admin = req.admin
     } else {
       return res.status(400).json({ data: "Invalid header type" });
     }
@@ -877,7 +1276,7 @@ module.exports.allHeaders = asyncHandler(async (req, res) => {
 
 module.exports.getBatchAwwaitTime = asyncHandler(async (req, res) => {
   try {
-    const [batchTime, numOfQuest ]= await Promise.all( [batchAwaitTimeModel.findOne({set: true}).lean(), numberOfQuestionPerSubjectModel.findOne({})] ) 
+    const [batchTime, numOfQuest ]= await Promise.all( [batchAwaitTimeModel.findOne({admin: req.admin}).lean(), numberOfQuestionPerSubjectModel.findById(req.admin)] ) 
     // console.log(batchTime,numOfQuest);
     res.status(200).json({ data: batchTime, numOfQuest });
   } catch (error) {
@@ -890,60 +1289,65 @@ module.exports.getBatchAwwaitTime = asyncHandler(async (req, res) => {
 
 
 // Function to generate a unique scratch card
-const date = new Date();
-const year = date.getFullYear();
-function handleCard(length, cardNumber) {
-  const generatedCards = new Set();
-
-  // Helper function to generate a single scratch card
-  function generateScratchCard(length) {
-    const chars = 'ABC0123456789EFGH';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      const randomIndex = Math.floor(Math.random() * chars.length);
-      result += chars[randomIndex];
-    }
-    return result;
+function generateScratchCard(length) {
+  const chars = 'ABCDEFGH0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
   }
-
-  // Keep generating unique scratch cards until we reach the desired count
-  while (generatedCards.size < cardNumber) {
-    generatedCards.add(year+generateScratchCard(length));
-  }
-
-  // Convert Set to array and return it
-  return Array.from(generatedCards);
+  return result;
 }
 
-module.exports.scratchCard = asyncHandler(async (req, res) => {
-  try {
-    const { cardCount } = req.body;
+function handleCard(cardLength, cardNumber) {
+  const generatedCards = new Set();
+  const year = new Date().getFullYear();
 
-    if(!cardCount){
-      return res.status(400).json({ error : "Count cannot be empty" });
-    }
-    if(isNaN(cardCount)){
-      return res.status(400).json({ error : "Your count input must be a number" });
-    }
-    // Generate the required number of scratch cards
-    const genCards = handleCard(10, cardCount);
-
-    // Save all generated cards to the database in bulk
-    const cardData = genCards.map(card => ({ card })); // Create array of objects for each card
-
-    await scratchCardModel.insertMany(cardData);
-
-    res.status(200).json({ data: `${cardCount} scratch cards generated successfully` });
-  } catch (error) {
-    console.error("Error generating scratch cards:", error);
-    res.status(500).json({ data: "Server error" });
+  while (generatedCards.size < cardNumber) {
+    generatedCards.add(`${year}${generateScratchCard(cardLength)}`);
   }
+
+  return [...generatedCards];
+}
+
+
+module.exports.scratchCard = asyncHandler(async (req, res) => {
+  if(req.adminRole !== 'admin'){
+    return res.status(400).json({message: "Scratch card generation not allowed at the moment"});
+  }
+  let { cardCount } = req.body;
+
+  cardCount = Number(cardCount);
+
+  if (!Number.isInteger(cardCount) || cardCount <= 0) {
+    return res.status(400).json({
+      error: "cardCount must be a positive number",
+    });
+  }
+
+  const genCards = handleCard(10, cardCount);
+
+  const cardData = genCards.map(card => ({
+    card,
+    admin: req.admin, 
+  }));
+
+  try {
+    await scratchCardModel.insertMany(cardData, { ordered: false });
+  } catch (err) {
+    // Ignore duplicate key errors safely
+    if (err.code !== 11000) throw err;
+  }
+
+  res.status(200).json({
+    data: `${cardCount} scratch cards generated successfully`,
+  });
 });
+
 
 
 module.exports.getScratchCard = asyncHandler(async (req, res) => {
   try {
-    const data = await scratchCardModel.find({}).sort({createdAt: -1}).lean()
+    const data = await scratchCardModel.find({admin: req.admin}).sort({createdAt: -1}).lean()
 
     res.status(200).json({ data });
   } catch (error) {
@@ -1017,13 +1421,13 @@ module.exports.changeProfileName= asyncHandler(async (req, res) => {
 
 module.exports.changeBatchAwaitTime = asyncHandler(async (req, res) => {
   // return console.log(req.body);
-  if (!req.body.batchAwaitTime) {
+  if (!req.body.batchAwaitTime || isNaN(req.body.batchAwaitTime) || req.body.batchAwaitTime < 1) {
     return res.status(400).json({ error: 'Invalid input' });
   }
 
-  const  batchAwaitTime = await batchAwaitTimeModel.findOne({set: true});
+  const  batchAwaitTime = await batchAwaitTimeModel.findOne({admin: req.admin});
   if (!batchAwaitTime) {
-   const newBatch = await batchAwaitTimeModel.create(req.body)
+   const newBatch = await batchAwaitTimeModel.create({...req.body, admin: req.admin})
     // return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
     return res.status(200).json({ message: 'batchAwaitTime created for the first time', newName : newBatch.batchAwaitTime});
   }
@@ -1036,23 +1440,30 @@ module.exports.changeBatchAwaitTime = asyncHandler(async (req, res) => {
 });
 
 module.exports.numberOfQuestionsPerSubjects = asyncHandler(async (req, res) => {
-  // return console.log(req.body);
-  if (!req.body.numberOfQuestionPerSubject) {
-    return res.status(400).json({ error: 'Invalid input' });
+  let { numberOfQuestionPerSubject } = req.body;
+
+  // convert string → number
+  numberOfQuestionPerSubject = Number(numberOfQuestionPerSubject);
+
+  if (
+    Number.isNaN(numberOfQuestionPerSubject) ||
+    numberOfQuestionPerSubject <= 0
+  ) {
+    return res.status(400).json({
+      error: 'numberOfQuestionPerSubject must be a positive number',
+    });
   }
 
-  const  numOfQuest = await numberOfQuestionPerSubjectModel.findOne({})
-  if (!numOfQuest) {
-   const newBatch = await numberOfQuestionPerSubjectModel.create(req.body)
-    // return res.status(200).json({ message: 'batchAwaitTime created for the first time' });
-    return res.status(200).json({ message: 'Number of question per subjects created for the first time', newNumQuest : newBatch.numberOfQuestionPerSubject});
-  }
+  const setting = await numberOfQuestionPerSubjectModel.findOneAndUpdate(
+    { admin: req.admin }, // 🔑 validation key
+    { numberOfQuestionPerSubject },
+    { new: true, upsert: true }
+  );
 
-  numOfQuest.numberOfQuestionPerSubject = req.body.numberOfQuestionPerSubject; 
-  const numOfQuestSave = await numOfQuest.save();
-  // console.log(batchAwaitTimeSave.batchAwaitTime);
-
-  res.status(200).json({ message: 'Number of question is ', newNumQuest : numOfQuestSave.numberOfQuestionPerSubject});
+  res.status(200).json({
+    message: 'Number of questions per subject saved successfully',
+    newNumQuest: setting.numberOfQuestionPerSubject,
+  });
 });
 
 //--------------delete candidates by class and result---------------------
